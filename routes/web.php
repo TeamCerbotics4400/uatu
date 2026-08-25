@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\MatchController;
+use App\Http\Controllers\Api\MatchesController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\MXTaskController;
 use App\Http\Controllers\Api\ServiceTaskController;
@@ -20,11 +20,11 @@ Route::prefix('api')->group(function () {
     Route::delete('/users/{id}', [UserController::class, 'destroy']);
 
     // Matches routes
-    Route::get('/matches', [MatchController::class, 'index']);
-    Route::post('/matches', [MatchController::class, 'store']);
-    Route::get('/matches/{id}', [MatchController::class, 'show']);
-    Route::put('/matches/{id}', [MatchController::class, 'update']);
-    Route::delete('/matches/{id}', [MatchController::class, 'destroy']);
+    Route::get('/matches', [MatchesController::class, 'index']);
+    Route::post('/matches', [MatchesController::class, 'store']);
+    Route::get('/matches/{id}', [MatchesController::class, 'show']);
+    Route::put('/matches/{id}', [MatchesController::class, 'update']);
+    Route::delete('/matches/{id}', [MatchesController::class, 'destroy']);
 
     // Teams routes
     Route::get('/teams', [TeamController::class, 'index']);

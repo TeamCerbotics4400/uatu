@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Match;
+use App\Models\Matches;
 use Illuminate\Http\Request;
 
 class MatchesController extends Controller
@@ -22,7 +22,7 @@ class MatchesController extends Controller
 
         $matches = Matches::create($validated);
 
-        return response()->json($match, 201);
+        return response()->json($matches, 201);
     }
 
     public function index()
@@ -69,11 +69,11 @@ class MatchesController extends Controller
     {
         $matches = Matches::find($id);
 
-        if (!$match) {
+        if (!$matches) {
             return response()->json(['message' => 'Match not found'], 404);
         }
 
-        $match->delete();
+        $matches->delete();
 
         return response()->json(['message' => 'Match deleted successfully']);
     }
