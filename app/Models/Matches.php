@@ -5,21 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Team extends Model
+class Matches extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'priority',
-        'required_service',
-        'current_service_status',
+        'number',
+        'blue_1',
+        'blue_2',
+        'blue_3',
+        'red_1',
+        'red_2',
+        'red_3',
     ];
 
     protected $casts = [
-        'priority' => 'string',
-        'required_service' => 'string',
-        'current_service_status' => 'string',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
