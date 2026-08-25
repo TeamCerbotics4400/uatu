@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\MXTask;
+use App\Models\MxTask;
 use Illuminate\Http\Request;
 
-class MXTaskController extends Controller
+class MxTaskController extends Controller
 {
     public function store(Request $request)
     {
@@ -18,23 +18,23 @@ class MXTaskController extends Controller
             'completed_at' => 'nullable|date_format:Y-m-d H:i:s',
         ]);
 
-        $mxtask = MXTask::create($validated);
+        $mxtask = MxTask::create($validated);
 
         return response()->json($mxtask, 201);
     }
 
     public function index()
     {
-        $mxtasks = MXTask::all();
+        $mxtasks = MxTask::all();
         return response()->json($mxtasks);
     }
 
     public function show($id)
     {
-        $mxtask = MXTask::find($id);
+        $mxtask = MxTask::find($id);
 
         if (!$mxtask) {
-            return response()->json(['message' => 'MXTask not found'], 404);
+            return response()->json(['message' => 'MxTask not found'], 404);
         }
 
         return response()->json($mxtask);
@@ -42,10 +42,10 @@ class MXTaskController extends Controller
 
     public function update(Request $request, $id)
     {
-        $mxtask = MXTask::find($id);
+        $mxtask = MxTask::find($id);
 
         if (!$mxtask) {
-            return response()->json(['message' => 'MXTask not found'], 404);
+            return response()->json(['message' => 'MxTask not found'], 404);
         }
 
         $validated = $request->validate([
@@ -63,14 +63,14 @@ class MXTaskController extends Controller
 
     public function destroy($id)
     {
-        $mxtask = MXTask::find($id);
+        $mxtask = MxTask::find($id);
 
         if (!$mxtask) {
-            return response()->json(['message' => 'MXTask not found'], 404);
+            return response()->json(['message' => 'MxTask not found'], 404);
         }
 
         $mxtask->delete();
 
-        return response()->json(['message' => 'MXTask deleted successfully']);
+        return response()->json(['message' => 'MxTask deleted successfully']);
     }
 }

@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\MatchesController;
 use App\Http\Controllers\Api\TeamController;
-use App\Http\Controllers\Api\MXTaskController;
+use App\Http\Controllers\Api\MxTaskController;
 use App\Http\Controllers\Api\ServiceTaskController;
 
 Route::get('/', function () {
@@ -33,12 +33,12 @@ Route::prefix('api')->group(function () {
     Route::put('/teams/{id}', [TeamController::class, 'update']);
     Route::delete('/teams/{id}', [TeamController::class, 'destroy']);
 
-    // MXTasks routes
-    Route::get('/mxtasks', [MXTaskController::class, 'index']);
-    Route::post('/mxtasks', [MXTaskController::class, 'store']);
-    Route::get('/mxtasks/{id}', [MXTaskController::class, 'show']);
-    Route::put('/mxtasks/{id}', [MXTaskController::class, 'update']);
-    Route::delete('/mxtasks/{id}', [MXTaskController::class, 'destroy']);
+    // MxTasks routes
+    Route::get('/mxtasks', [MxTaskController::class, 'index']);
+    Route::post('/mxtasks', [MxTaskController::class, 'store']);
+    Route::get('/mxtasks/{id}', [MxTaskController::class, 'show']);
+    Route::put('/mxtasks/{id}', [MxTaskController::class, 'update']);
+    Route::delete('/mxtasks/{id}', [MxTaskController::class, 'destroy']);
 
     // ServiceTasks routes
     Route::get('/service-tasks', [ServiceTaskController::class, 'index']);
