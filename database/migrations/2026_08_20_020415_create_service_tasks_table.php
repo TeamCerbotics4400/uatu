@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('service_tasks', function (Blueprint $table) {
             $table->id();
-            $table->enum('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED']);
+            $table->enum('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELED']);
             $table->unsignedBigInteger('assigned_team')->nullable();
             $table->unsignedBigInteger('assigned_user')->nullable();
             $table->timestamp('started_at')->nullable();
