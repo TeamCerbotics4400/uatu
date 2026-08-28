@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->enum('status', ['AVAILABLE', 'BUSY', 'RESTING'])->default('AVAILABLE');
+            $table->enum('status', ['AVAILABLE', 'BUSY', 'RESTING', 'NEEDS_HELP'])->default('AVAILABLE');
             $table->string('phone_number')->nullable();
             $table->timestamps();
         });

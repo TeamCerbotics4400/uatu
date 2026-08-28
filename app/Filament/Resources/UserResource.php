@@ -3,21 +3,18 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
-use App\Filament\Resources\UserResource\RelationManagers;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
     public static function form(Form $form): Form
     {
@@ -27,12 +24,11 @@ class UserResource extends Resource
                     ->required(),
                 Forms\Components\Select::make('status')
                     ->options([
-                        'AVAILABLE' => 'Disponible',
-                        'BUSY' => 'Ocupado',
-                        'RESTING' => 'Descansando',
-
+                        'AVAILABLE' => 'Available',
+                        'BUSY' => 'Busy',
+                        'REST' => 'Rest',
+                        'NEEDS_HELP' => 'Needs Help',
                     ])
-                    ->searchable()
                     ->required(),
                 Forms\Components\TextInput::make('phone_number')
                     ->tel(),
@@ -46,7 +42,15 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('status')
-                    ->searchable(),
+                    ->searchable()
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'AVAILABLE' => 'success',
+                        'BUSY' => 'info',
+                        'NEEDS_HELP' => 'danger',
+                        'REST' => 'gray',
+                        default => 'secondary',
+                    }),
                 Tables\Columns\TextColumn::make('phone_number')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')
@@ -59,7 +63,13 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'AVAILABLE' => 'Available',
+                        'BUSY' => 'Busy',
+                        'REST' => 'Rest',
+                        'NEEDS_HELP' => 'Needs Help',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

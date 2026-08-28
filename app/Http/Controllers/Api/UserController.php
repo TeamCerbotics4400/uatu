@@ -12,7 +12,7 @@ class UserController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string',
-            'status' => 'required|string|in:AVAILABLE,BUSY,RESTING',
+            'status' => 'required|string|in:AVAILABLE,BUSY,RESTING,NEEDS_HELP',
             'phone_number' => 'nullable|string',
         ]);
 
