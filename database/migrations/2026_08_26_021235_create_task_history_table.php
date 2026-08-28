@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreign('service_task_id')->constrained('service_task')->cascadeOnDelete();
             $table->foreign('user_id')->nullable()->constrained('users');
             $table->string('previous_state')->nullable();
-            $table->stirng('new_state');
+            $table->string('new_state');
             $table->timestamps();
         });
     }
