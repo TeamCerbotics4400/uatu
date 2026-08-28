@@ -26,4 +26,14 @@ class ServiceTask extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    public function team()
+{
+    return $this->belongsTo(Team::class, 'assigned_team');
+}
+
+public function user()
+{
+    return $this->belongsTo(User::class, 'assigned_user');
+}
 }

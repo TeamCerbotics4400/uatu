@@ -23,4 +23,34 @@ class Matches extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    public function blue1Team()
+{
+    return $this->belongsTo(Team::class, 'blue_1');
+}
+
+public function blue2Team()
+{
+    return $this->belongsTo(Team::class, 'blue_2');
+}
+
+public function blue3Team()
+{
+    return $this->belongsTo(Team::class, 'blue_3');
+}
+
+public function red1Team()
+{
+    return $this->belongsTo(Team::class, 'red_1');
+}
+
+public function red2Team()
+{
+    return $this->belongsTo(Team::class, 'red_2');
+}
+
+public function red3Team()
+{
+    return $this->belongsTo(Team::class, 'red_3');
+}
 }
