@@ -3,17 +3,11 @@
 namespace App\Models;
  
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
  
 class MXTask extends Model
 {
-    use HasUuids;
- 
-    protected $table = 'mx_tasks';
-    protected $keyType = 'string';
-    public $incrementing = false;
- 
+    protected $table = 'mxtasks';
     protected $fillable = [
         'type',
         'status',

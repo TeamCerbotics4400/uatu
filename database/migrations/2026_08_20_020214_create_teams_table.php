@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('teams', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->enum('priority', ['1', '2', '3', '4', '5', '6', '7']);
             $table->enum('required_service', ['MECHANICAL', 'PROGRAMMING', 'BOTH', 'NONE']);

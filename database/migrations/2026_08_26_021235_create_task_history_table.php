@@ -18,7 +18,7 @@ return new class extends Migration
             
             $table->foreignId('service_task_id')->nullable()->constrained('service_tasks')->nullOnDelete();
             
-            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignUuid('user_id')->nullable()->constrained('users')->nullOnDelete();
             
             $table->timestamps();
         });

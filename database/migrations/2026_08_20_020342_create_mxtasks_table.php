@@ -18,7 +18,7 @@ return new class extends Migration
             $table->enum('status', ['IN_PROGRESS']);
             
             // Replaces unsignedBigInteger and foreign() call
-            $table->foreignId('assigned_user')
+            $table->foreignUuid('assigned_user')
                   ->nullable()
                   ->constrained('users')
                   ->nullOnDelete();

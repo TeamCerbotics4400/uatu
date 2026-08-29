@@ -30,49 +30,65 @@ class ServiceTaskResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Task Information')
+                Forms\Components\Group::make()
                     ->schema([
-                        Forms\Components\Select::make('status')
-                            ->options([
-                                'PENDING' => 'Pending',
-                                'ASSIGNED' => 'Assigned',
-                                'IN_PROGRESS' => 'In Progress',
-                                'BLOCKED' => 'Blocked',
-                                'COMPLETED' => 'Completed',
-                                'CANCELLED' => 'Cancelled',
+                        Forms\Components\Section::make('Task Details')
+                            ->description('Assign a team and user to this task.')
+                            ->schema([
+                                Forms\Components\Select::make('assigned_team')
+                                    ->relationship('team', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->label('Assigned Team')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Select::make('assigned_user')
+                                    ->relationship('user', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->nullable()
+                                    ->label('Assigned User')
+                                    ->hint('Selecting a user automatically assigns the task.')
+                                    ->columnSpanFull(),
                             ])
-                            ->required()
-                            ->disabled()
-                            ->label('Status'),
-
-                        Forms\Components\Select::make('assigned_team')
-                            ->relationship('team', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->required()
-                            ->label('Team'),
-
-                        Forms\Components\Select::make('assigned_user')
-                            ->relationship('user', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->nullable()
-                            ->label('Assigned User'),
+                            ->columns(2),
                     ])
-                    ->columns(2),
+                    ->columnSpan(['lg' => 2]),
 
-                Forms\Components\Section::make('Timestamps')
+                Forms\Components\Group::make()
                     ->schema([
-                        Forms\Components\DateTimePicker::make('started_at')
-                            ->label('Started At')
-                            ->disabled(),
+                        Forms\Components\Section::make('Status')
+                            ->schema([
+                                Forms\Components\Select::make('status')
+                                    ->options([
+                                        'PENDING' => 'Pending',
+                                        'ASSIGNED' => 'Assigned',
+                                        'IN_PROGRESS' => 'In Progress',
+                                        'BLOCKED' => 'Blocked',
+                                        'COMPLETED' => 'Completed',
+                                        'CANCELLED' => 'Cancelled',
+                                    ])
+                                    ->default('PENDING')
+                                    ->disabled()
+                                    ->dehydrated()
+                                    ->label('Current Status'),
+                            ]),
 
-                        Forms\Components\DateTimePicker::make('completed_at')
-                            ->label('Completed At')
-                            ->disabled(),
+                        Forms\Components\Section::make('Timeline')
+                            ->schema([
+                                Forms\Components\Placeholder::make('started_at')
+                                    ->label('Started At')
+                                    ->content(fn (?ServiceTask $record): string => $record?->started_at ? $record->started_at->format('M d, Y H:i') : '-'),
+
+                                Forms\Components\Placeholder::make('completed_at')
+                                    ->label('Completed At')
+                                    ->content(fn (?ServiceTask $record): string => $record?->completed_at ? $record->completed_at->format('M d, Y H:i') : '-'),
+                            ]),
                     ])
-                    ->columns(2),
-            ]);
+                    ->columnSpan(['lg' => 1]),
+            ])
+            ->columns(3);
     }
 
     public static function table(Table $table): Table
@@ -112,13 +128,13 @@ class ServiceTaskResource extends Resource
                     ->label('Started')
                     ->dateTime('M d, H:i')
                     ->sortable()
-                    ->default('—'),
+                    ->placeholder('—'),
 
                 TextColumn::make('completed_at')
                     ->label('Completed')
                     ->dateTime('M d, H:i')
                     ->sortable()
-                    ->default('—'),
+                    ->placeholder('—'),
 
                 TextColumn::make('elapsed_time')
                     ->label('Elapsed Time')

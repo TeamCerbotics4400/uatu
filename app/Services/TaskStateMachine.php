@@ -2,9 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\MXTask;
+use App\Models\MxTask;
 use App\Models\ServiceTask;
 use App\Models\User;
+use App\Models\TaskHistory;
 use Carbon\Carbon;
 
 class TaskStateMachine
@@ -25,6 +26,7 @@ class TaskStateMachine
         ]);
 
         $user->update(['status' => 'BUSY']);
+        $this->recordHistory($task, 'PENDING');
 
         return $task->refresh();
     }
@@ -39,6 +41,7 @@ class TaskStateMachine
             'status' => 'IN_PROGRESS',
             'started_at' => Carbon::now(),
         ]);
+        $this->recordHistory($task, 'ASSIGNED');
 
         return $task->refresh();
     }
@@ -60,6 +63,7 @@ class TaskStateMachine
                 $user->update(['status' => 'AVAILABLE']);
             }
         }
+        $this->recordHistory($task, 'IN_PROGRESS');
 
         return $task->refresh();
     }
@@ -70,6 +74,7 @@ class TaskStateMachine
             return false;
         }
 
+        $previousState = $task->status;
         $task->update([
             'status' => 'CANCELLED',
             'completed_at' => Carbon::now(),
@@ -81,6 +86,7 @@ class TaskStateMachine
                 $user->update(['status' => 'AVAILABLE']);
             }
         }
+        $this->recordHistory($task, $previousState);
 
         return $task->refresh();
     }
@@ -92,6 +98,7 @@ class TaskStateMachine
         }
 
         $task->update(['status' => 'BLOCKED']);
+        $this->recordHistory($task, 'IN_PROGRESS');
 
         return $task->refresh();
     }
@@ -102,11 +109,13 @@ class TaskStateMachine
             return false;
         }
 
+        $previousState = $task->status;
         $task->update([
             'status' => 'PENDING',
             'assigned_user' => null,
             'started_at' => null,
         ]);
+        $this->recordHistory($task, $previousState);
 
         return $task->refresh();
     }
@@ -136,16 +145,26 @@ class TaskStateMachine
         return $diff->format('%H:%I:%S');
     }
 
-    private function userHasActiveTask(int $userId): bool
+    private function userHasActiveTask(string $userId): bool
     {
         $activeStatusesService = ServiceTask::where('assigned_user', $userId)
             ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
             ->exists();
 
-        $activeStatusesMx = MXTask::where('assigned_user', $userId)
+        $activeStatusesMx = MxTask::where('assigned_user', $userId)
             ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
             ->exists();
 
         return $activeStatusesService || $activeStatusesMx;
+    }
+
+    private function recordHistory(ServiceTask $task, string $previousState): void
+    {
+        TaskHistory::create([
+            'service_task_id' => $task->id,
+            'previous_state' => $previousState,
+            'new_state' => $task->status,
+            'user_id' => $task->assigned_user, // User who is currently assigned (can be null)
+        ]);
     }
 }

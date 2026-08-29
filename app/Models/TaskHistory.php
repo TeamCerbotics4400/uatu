@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 class TaskHistory extends Model
 {
     
-    use HasFactory;
 
     protected $table = 'task_history';
 

@@ -14,12 +14,12 @@ return new class extends Migration
         Schema::create('matches', function (Blueprint $table) {
             $table->id();
             $table->unsignedInteger('number');
-            $table->unsignedBigInteger('blue_1')->nullable();
-            $table->unsignedBigInteger('blue_2')->nullable();
-            $table->unsignedBigInteger('blue_3')->nullable();
-            $table->unsignedBigInteger('red_1')->nullable();
-            $table->unsignedBigInteger('red_2')->nullable();
-            $table->unsignedBigInteger('red_3')->nullable();
+            $table->uuid('blue_1')->nullable();
+            $table->uuid('blue_2')->nullable();
+            $table->uuid('blue_3')->nullable();
+            $table->uuid('red_1')->nullable();
+            $table->uuid('red_2')->nullable();
+            $table->uuid('red_3')->nullable();
             $table->timestamps();
 
             $table->foreign('blue_1')->references('id')->on('teams')->onDelete('set null');

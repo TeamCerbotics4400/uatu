@@ -24,13 +24,13 @@ return new class extends Migration
             ])->default('PENDING');
 
             // Foreign key to `teams` table (BigInteger)
-            $table->foreignId('assigned_team')
+            $table->foreignUuid('assigned_team')
                 ->nullable()
                 ->constrained('teams')
                 ->nullOnDelete();
 
             // Foreign key to `users` table (UUID string)
-            $table->foreignId('assigned_user')
+            $table->foreignUuid('assigned_user')
                 ->nullable()
                 ->constrained('users')
                 ->nullOnDelete();
