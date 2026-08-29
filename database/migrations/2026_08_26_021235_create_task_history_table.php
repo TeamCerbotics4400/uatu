@@ -15,17 +15,12 @@ return new class extends Migration
             $table->id();
             $table->string('previous_state')->nullable();
             $table->string('new_state');
-            //primero lo declaras  para q no te error
-            $table->unsignedBigInteger('service_task_id')->nullable();
-            $table->unsignedBigInteger('user_id')->nullable();
+            
+            $table->foreignId('service_task_id')->nullable()->constrained('service_tasks')->nullOnDelete();
+            
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
             
             $table->timestamps();
-
-
-//van desoues del timestamps 
-
-$table->foreign('service_task_id')->references('id')->on('service_task');
-$table->foreign('user_id')->references('id')->on('users');
         });
     }
 

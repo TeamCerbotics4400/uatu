@@ -1,16 +1,19 @@
 <?php
-
+// app/Models/ServiceTask.php
+ 
 namespace App\Models;
-
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+ 
 use Illuminate\Database\Eloquent\Model;
-
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+ 
 class ServiceTask extends Model
 {
-    use HasFactory;
-
-    protected $table = 'service_tasks';
-
+    use HasUuids;
+ 
+    protected $keyType = 'string';
+    public $incrementing = false;
+ 
     protected $fillable = [
         'status',
         'assigned_team',
@@ -18,22 +21,19 @@ class ServiceTask extends Model
         'started_at',
         'completed_at',
     ];
-
+ 
     protected $casts = [
-        'status' => 'string',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
     ];
-
-    public function team()
-{
-    return $this->belongsTo(Team::class, 'assigned_team');
-}
-
-public function user()
-{
-    return $this->belongsTo(User::class, 'assigned_user');
-}
+ 
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'assigned_team');
+    }
+ 
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user');
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\MXTask;
 use App\Models\ServiceTask;
 use App\Models\User;
 use Carbon\Carbon;
@@ -140,7 +141,10 @@ class TaskStateMachine
         $activeStatusesService = ServiceTask::where('assigned_user', $userId)
             ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
             ->exists();
-    
+
+        $activeStatusesMx = MXTask::where('assigned_user', $userId)
+            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
+            ->exists();
 
         return $activeStatusesService || $activeStatusesMx;
     }
