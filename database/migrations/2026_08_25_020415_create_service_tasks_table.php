@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('service_tasks', function (Blueprint $table) {
             $table->id();
-
             $table->enum('status', [
                 'PENDING',
                 'ASSIGNED',
@@ -23,13 +22,19 @@ return new class extends Migration
                 'CANCELLED'
             ])->default('PENDING');
 
-            // Foreign key to `teams` table (BigInteger)
+            // Foreign key to `teams` table (UUID)
             $table->foreignUuid('assigned_team')
                 ->nullable()
                 ->constrained('teams')
                 ->nullOnDelete();
 
-            // Foreign key to `users` table (UUID string)
+            // Foreign key to `matches` table (BigInteger)
+            $table->unsignedBigInteger('match_id')
+                ->nullable()
+                ->constrained('matches')
+                ->nullOnDelete();
+
+            // Foreign key to `users` table (UUID)
             $table->foreignUuid('assigned_user')
                 ->nullable()
                 ->constrained('users')
@@ -37,9 +42,7 @@ return new class extends Migration
 
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
-
             $table->timestamps();
-
             $table->index('status');
         });
     }

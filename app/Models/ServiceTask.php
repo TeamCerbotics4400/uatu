@@ -1,6 +1,5 @@
 <?php
-// app/Models/ServiceTask.php
- 
+
 namespace App\Models;
  
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +11,7 @@ class ServiceTask extends Model
         'status',
         'assigned_team',
         'assigned_user',
+        'match_id',
         'started_at',
         'completed_at',
     ];
@@ -29,5 +29,10 @@ class ServiceTask extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_user');
+    }
+
+    public function match(): BelongsTo
+    {
+        return $this->belongsTo(Matches::class, 'match_id');
     }
 }

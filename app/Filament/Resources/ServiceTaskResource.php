@@ -6,6 +6,7 @@ use App\Filament\Resources\ServiceTaskResource\Pages;
 use App\Models\ServiceTask;
 use App\Models\Team;
 use App\Models\User;
+use App\Models\Matches;
 use App\Services\TaskStateMachine;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -22,8 +23,11 @@ class ServiceTaskResource extends Resource
     protected static ?string $model = ServiceTask::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
     protected static ?string $navigationLabel = 'Service Tasks';
+
     protected static ?string $modelLabel = 'Service Task';
+
     protected static ?string $pluralModelLabel = 'Service Tasks';
 
     public static function form(Form $form): Form
@@ -33,7 +37,7 @@ class ServiceTaskResource extends Resource
                 Forms\Components\Group::make()
                     ->schema([
                         Forms\Components\Section::make('Task Details')
-                            ->description('Assign a team and user to this task.')
+                            ->description('Assign a team and match to this task.')
                             ->schema([
                                 Forms\Components\Select::make('assigned_team')
                                     ->relationship('team', 'name')
@@ -41,6 +45,24 @@ class ServiceTaskResource extends Resource
                                     ->preload()
                                     ->required()
                                     ->label('Assigned Team')
+                                    ->live()
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Select::make('match_id')
+                                    ->label('Match')
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->options(function ($get) {
+                                        $teamId = $get('assigned_team');
+                                        if (!$teamId) {
+                                            return [];
+                                        }
+                                        return Matches::getMatchesForTeam($teamId)
+                                            ->pluck('number', 'id')
+                                            ->mapWithKeys(fn ($number, $id) => [$id => "Match #$number"])
+                                            ->toArray();
+                                    })
                                     ->columnSpanFull(),
 
                                 Forms\Components\Select::make('assigned_user')
@@ -58,6 +80,21 @@ class ServiceTaskResource extends Resource
 
                 Forms\Components\Group::make()
                     ->schema([
+                        Forms\Components\Section::make('Team Info')
+                            ->schema([
+                                Forms\Components\Placeholder::make('priority')
+                                    ->label('Team Priority')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->team?->priority ? "Priority {$record->team->priority}" : '-'
+                                    ),
+
+                                Forms\Components\Placeholder::make('required_service')
+                                    ->label('Required Service')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->team?->required_service ?? '-'
+                                    ),
+                            ]),
+
                         Forms\Components\Section::make('Status')
                             ->schema([
                                 Forms\Components\Select::make('status')
@@ -105,6 +142,25 @@ class ServiceTaskResource extends Resource
                     ->label('Team')
                     ->sortable()
                     ->searchable(),
+
+                TextColumn::make('team.priority')
+                    ->label('Priority')
+                    ->badge()
+                    ->color(fn (?int $state): string => match ($state) {
+                        1, 2 => 'danger',
+                        3, 4 => 'warning',
+                        5, 6, 7 => 'info',
+                        default => 'gray',
+                    })
+                    ->sortable()
+                    ->searchable(),
+
+                TextColumn::make('match.number')
+                    ->label('Match #')
+                    ->sortable()
+                    ->searchable()
+                    ->prefix('Match #')
+                    ->default('—'),
 
                 TextColumn::make('user.name')
                     ->label('Assigned User')
@@ -157,6 +213,10 @@ class ServiceTaskResource extends Resource
 
                 Tables\Filters\SelectFilter::make('assigned_team')
                     ->relationship('team', 'name'),
+
+                Tables\Filters\SelectFilter::make('match_id')
+                    ->relationship('match', 'number')
+                    ->label('Match'),
             ])
             ->actions([
                 Action::make('assign')
@@ -174,7 +234,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record, array $data): void {
                         $stateMachine = new TaskStateMachine();
                         $user = User::find($data['assigned_user']);
-
                         if ($user) {
                             $result = $stateMachine->toAssigned($record, $user);
                             if ($result) {
@@ -200,7 +259,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record): void {
                         $stateMachine = new TaskStateMachine();
                         $result = $stateMachine->toInProgress($record);
-
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
@@ -224,7 +282,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record): void {
                         $stateMachine = new TaskStateMachine();
                         $result = $stateMachine->toBlocked($record);
-
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
@@ -248,7 +305,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record): void {
                         $stateMachine = new TaskStateMachine();
                         $result = $stateMachine->toInProgress($record);
-
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
@@ -273,7 +329,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record): void {
                         $stateMachine = new TaskStateMachine();
                         $result = $stateMachine->toCompleted($record);
-
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
@@ -298,7 +353,6 @@ class ServiceTaskResource extends Resource
                     ->action(function (ServiceTask $record): void {
                         $stateMachine = new TaskStateMachine();
                         $result = $stateMachine->toCancelled($record);
-
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
