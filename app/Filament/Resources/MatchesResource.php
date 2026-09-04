@@ -72,22 +72,68 @@ class MatchesResource extends Resource
                     ->sortable()
                     ->searchable()
                     ->label('Match #'),
+
+                // Blue Alliance
                 Tables\Columns\TextColumn::make('blue1Team.name')
-                    ->label('Blue 1'),
+                    ->label('Blue 1')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->blue_1)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
                 Tables\Columns\TextColumn::make('blue2Team.name')
-                    ->label('Blue 2'),
+                    ->label('Blue 2')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->blue_2)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
                 Tables\Columns\TextColumn::make('blue3Team.name')
-                    ->label('Blue 3'),
+                    ->label('Blue 3')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->blue_3)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
+                // Red Alliance
                 Tables\Columns\TextColumn::make('red1Team.name')
-                    ->label('Red 1'),
+                    ->label('Red 1')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->red_1)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
                 Tables\Columns\TextColumn::make('red2Team.name')
-                    ->label('Red 2'),
+                    ->label('Red 2')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->red_2)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
                 Tables\Columns\TextColumn::make('red3Team.name')
-                    ->label('Red 3'),
+                    ->label('Red 3')
+                    ->badge()
+                    ->color(fn (Matches $record): string => match ($record->getTeamServiceStatus($record->red_3)) {
+                        'completed' => 'success',
+                        'in_progress' => 'warning',
+                        default => 'danger',
+                    }),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()

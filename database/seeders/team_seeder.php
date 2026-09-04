@@ -9,7 +9,7 @@ class team_seeder extends Seeder
 {
     public function run(): void
     {
-        $countries = ['Mexico', 'USA', 'Canada', 'Japan', 'Brazil'];
+        $countries = ['Mexico', 'USA', 'Canada', 'Japan', 'Brazil', 'Kazahstan'];
 
         foreach ($countries as $country) {
             Team::create([

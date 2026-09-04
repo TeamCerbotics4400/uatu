@@ -72,4 +72,29 @@ class Matches extends Model
             ->orWhere('red_2', $teamId)
             ->orWhere('red_3', $teamId);
     }
+
+    /**
+     * Obtiene el estado del ServiceTask de un equipo en este match
+     * Retorna: 'completed', 'in_progress', o 'pending' (rojo por defecto)
+     */
+    public function getTeamServiceStatus(?string $teamId): string
+    {
+        if (!$teamId) {
+            return 'pending';
+        }
+
+        $serviceTask = ServiceTask::where('match_id', $this->id)
+            ->where('assigned_team', $teamId)
+            ->first();
+
+        if (!$serviceTask) {
+            return 'pending';
+        }
+
+        return match ($serviceTask->status) {
+            'COMPLETED' => 'completed',
+            'IN_PROGRESS' => 'in_progress',
+            default => 'pending', // PENDING, ASSIGNED, BLOCKED, CANCELLED
+        };
+    }
 }

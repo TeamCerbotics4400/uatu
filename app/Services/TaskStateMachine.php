@@ -286,11 +286,13 @@ class TaskStateMachine
             ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
             ->exists();
 
-        $activeStatusesMx = MxTask::where('assigned_user_1', $userId)
-            ->orWhere('assigned_user_2', $userId)
-            ->orWhere('assigned_user_3', $userId)
-            ->orWhere('assigned_user_4', $userId)
-            ->whereIn('status', ['IN_PROGRESS'])
+        $activeStatusesMx = MxTask::whereIn('status', ['IN_PROGRESS'])
+            ->where(function ($query) use ($userId) {
+                $query->where('assigned_user_1', $userId)
+                      ->orWhere('assigned_user_2', $userId)
+                      ->orWhere('assigned_user_3', $userId)
+                      ->orWhere('assigned_user_4', $userId);
+            })
             ->exists();
 
         return $activeStatusesService || $activeStatusesMx;
