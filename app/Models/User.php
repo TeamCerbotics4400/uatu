@@ -15,8 +15,9 @@ class User extends Model
         'id',
         'name',
         'status',
-        'phone_number'
-        
+        'phone_number',
+        'telegram_chat_id',
+        'telegram_username',
     ];
 
        protected $casts = [
@@ -44,5 +45,15 @@ class User extends Model
     public function isAvailable(): bool
     {
         return $this->status === 'AVAILABLE' && !$this->currentTask();
+    }
+
+    public function telegramMessages(): HasMany
+    {
+        return $this->hasMany(TelegramMessage::class, 'user_id');
+    }
+
+    public function canReceiveTelegram(): bool
+    {
+        return !empty($this->telegram_chat_id);
     }
 }
