@@ -51,6 +51,20 @@ class UserResource extends Resource
                         'REST' => 'gray',
                         default => 'secondary',
                     }),
+                Tables\Columns\TextColumn::make('currentTask')
+                    ->getStateUsing(fn ($record) => $record->getCurrentTaskDisplay())
+                    ->label('Current Task')
+                    ->badge()
+                    ->color(fn (string $state): string => match (true) {
+                        str_starts_with($state, 'HELPING') => 'info',
+                        $state === 'CHECKLIST' => 'warning',
+                        $state === 'PIT_CHECKLIST' => 'warning',
+                        $state === 'PIT' => 'success',
+                        $state === 'MATCH' => 'danger',
+                        $state === '—' => 'gray',
+                        default => 'secondary',
+                    })
+                    ->sortable(query: fn ($query, $direction) => null),
                 Tables\Columns\TextColumn::make('phone_number')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')

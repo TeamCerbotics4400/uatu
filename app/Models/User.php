@@ -28,6 +28,7 @@ class User extends Model
     {
         return $this->hasMany(ServiceTask::class, 'assigned_user');
     }
+
  
     public function mxTasks(): HasMany
     {
@@ -45,4 +46,36 @@ class User extends Model
     {
         return $this->status === 'AVAILABLE' && !$this->currentTask();
     }
+
+    
+
+    public function getCurrentTaskDisplay(): string
+{
+    // Buscar ServiceTask activo
+    $serviceTask = $this->serviceTasks()
+        ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
+        ->with('team')
+        ->first();
+
+    if ($serviceTask) {
+        $teamName = $serviceTask->team?->name ?? 'UNKNOWN';
+        return 'HELPING_' . strtoupper($teamName);
+    }
+
+    // Buscar MxTask activo (en cualquiera de los 4 campos)
+    $mxTask = MxTask::whereIn('status', ['PENDING', 'IN_PROGRESS'])
+        ->where(function ($query) {
+            $query->where('assigned_user_1', $this->id)
+                  ->orWhere('assigned_user_2', $this->id)
+                  ->orWhere('assigned_user_3', $this->id)
+                  ->orWhere('assigned_user_4', $this->id);
+        })
+        ->first();
+
+    if ($mxTask) {
+        return $mxTask->type;
+    }
+
+    return '—';
+}
 }
