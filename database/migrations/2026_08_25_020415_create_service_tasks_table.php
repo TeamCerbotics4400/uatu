@@ -28,6 +28,16 @@ return new class extends Migration
                 ->constrained('teams')
                 ->nullOnDelete();
 
+            // Priority: 1 (highest) to 7 (lowest)
+            $table->enum('priority', ['1', '2', '3', '4', '5', '6', '7'])
+                ->default('4')
+                ->comment('Priority level: 1 (critical) to 7 (very low)');
+
+            // Required service type for this task
+            $table->enum('required_service', ['MECHANICAL', 'PROGRAMMING', 'BOTH', 'NONE'])
+                ->default('NONE')
+                ->comment('Type of service required for this task');
+
             // Foreign key to `matches` table (BigInteger)
             $table->unsignedBigInteger('match_id')
                 ->nullable()
@@ -44,6 +54,7 @@ return new class extends Migration
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
             $table->index('status');
+            $table->index('priority');
         });
     }
 
