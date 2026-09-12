@@ -12,7 +12,6 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Forms\Components;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -65,6 +64,33 @@ class ServiceTaskResource extends Resource
                                     })
                                     ->columnSpanFull(),
 
+                                Forms\Components\Select::make('priority')
+                                    ->options([
+                                        '1' => 'Priority 1 (Critical)',
+                                        '2' => 'Priority 2 (High)',
+                                        '3' => 'Priority 3 (High-Medium)',
+                                        '4' => 'Priority 4 (Medium)',
+                                        '5' => 'Priority 5 (Medium-Low)',
+                                        '6' => 'Priority 6 (Low)',
+                                        '7' => 'Priority 7 (Very Low)',
+                                    ])
+                                    ->required()
+                                    ->default('4')
+                                    ->label('Priority')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Select::make('required_service')
+                                    ->options([
+                                        'MECHANICAL' => 'Mechanical',
+                                        'PROGRAMMING' => 'Programming',
+                                        'BOTH' => 'Both',
+                                        'NONE' => 'None',
+                                    ])
+                                    ->required()
+                                    ->default('NONE')
+                                    ->label('Required Service')
+                                    ->columnSpanFull(),
+
                                 Forms\Components\Select::make('assigned_user')
                                     ->relationship('user', 'name')
                                     ->searchable()
@@ -82,46 +108,56 @@ class ServiceTaskResource extends Resource
                     ->schema([
                         Forms\Components\Section::make('Team Info')
                             ->schema([
-                                Forms\Components\Placeholder::make('priority')
-                                    ->label('Team Priority')
-                                    ->content(fn (?ServiceTask $record): string => 
-                                        $record?->team?->priority ? "Priority {$record->team->priority}" : '-'
-                                    ),
-
-                                Forms\Components\Placeholder::make('required_service')
+                                Forms\Components\Placeholder::make('team_required_service')
                                     ->label('Required Service')
                                     ->content(fn (?ServiceTask $record): string => 
-                                        $record?->team?->required_service ?? '-'
+                                        $record?->team?->required_service ?? '—'
+                                    ),
+
+                                Forms\Components\Placeholder::make('team_status')
+                                    ->label('Team Current Status')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->team?->current_service_status ?? '—'
                                     ),
                             ]),
 
-                        Forms\Components\Section::make('Status')
+                        Forms\Components\Section::make('Status & Timeline')
+                            ->description('Status is automatically set to PENDING when created. Use action buttons to change state.')
                             ->schema([
-                                Forms\Components\Select::make('status')
-                                    ->options([
-                                        'PENDING' => 'Pending',
-                                        'ASSIGNED' => 'Assigned',
-                                        'IN_PROGRESS' => 'In Progress',
-                                        'BLOCKED' => 'Blocked',
-                                        'COMPLETED' => 'Completed',
-                                        'CANCELLED' => 'Cancelled',
-                                    ])
-                                    ->default('PENDING')
-                                    ->disabled()
-                                    ->dehydrated()
-                                    ->label('Current Status'),
-                            ]),
+                                Forms\Components\Placeholder::make('status')
+                                    ->label('Status')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->status ?? 'PENDING'
+                                    ),
 
-                        Forms\Components\Section::make('Timeline')
-                            ->schema([
                                 Forms\Components\Placeholder::make('started_at')
                                     ->label('Started At')
-                                    ->content(fn (?ServiceTask $record): string => $record?->started_at ? $record->started_at->format('M d, Y H:i') : '-'),
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->started_at?->format('Y-m-d H:i:s') ?? '—'
+                                    ),
 
                                 Forms\Components\Placeholder::make('completed_at')
                                     ->label('Completed At')
-                                    ->content(fn (?ServiceTask $record): string => $record?->completed_at ? $record->completed_at->format('M d, Y H:i') : '-'),
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->completed_at?->format('Y-m-d H:i:s') ?? '—'
+                                    ),
                             ]),
+
+                        Forms\Components\Section::make('Timestamps')
+                            ->schema([
+                                Forms\Components\Placeholder::make('created_at')
+                                    ->label('Created At')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->created_at?->format('Y-m-d H:i:s') ?? '—'
+                                    ),
+
+                                Forms\Components\Placeholder::make('updated_at')
+                                    ->label('Updated At')
+                                    ->content(fn (?ServiceTask $record): string => 
+                                        $record?->updated_at?->format('Y-m-d H:i:s') ?? '—'
+                                    ),
+                            ])
+                            ->collapsed(),
                     ])
                     ->columnSpan(['lg' => 1]),
             ])
@@ -133,72 +169,80 @@ class ServiceTaskResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')
-                    ->label('ID')
-                    ->sortable()
                     ->searchable()
-                    ->limit(10),
-
-                TextColumn::make('team.name')
-                    ->label('Team')
-                    ->sortable()
-                    ->searchable(),
-
-                TextColumn::make('team.priority')
-                    ->label('Priority')
-                    ->badge()
-                    ->color(fn (?int $state): string => match ($state) {
-                        1, 2 => 'danger',
-                        3, 4 => 'warning',
-                        5, 6, 7 => 'info',
-                        default => 'gray',
-                    })
-                    ->sortable()
-                    ->searchable(),
-
-                TextColumn::make('match.number')
-                    ->label('Match #')
-                    ->sortable()
-                    ->searchable()
-                    ->prefix('Match #')
-                    ->default('—'),
-
-                TextColumn::make('user.name')
-                    ->label('Assigned User')
-                    ->sortable()
-                    ->searchable()
-                    ->default('—'),
+                    ->label('Task ID')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 BadgeColumn::make('status')
-                    ->label('Status')
                     ->colors([
-                        'gray' => 'PENDING',
+                        'danger' => 'PENDING',
                         'info' => 'ASSIGNED',
                         'warning' => 'IN_PROGRESS',
                         'danger' => 'BLOCKED',
                         'success' => 'COMPLETED',
-                        'secondary' => 'CANCELLED',
+                        'gray' => 'CANCELLED',
                     ])
+                    ->label('Status'),
+
+                Tables\Columns\TextColumn::make('team.name')
+                    ->searchable()
+                    ->label('Team'),
+
+                BadgeColumn::make('priority')
+                    ->colors([
+                        'danger' => ['1', '2'],
+                        'warning' => ['3', '4'],
+                        'success' => ['5', '6', '7'],
+                    ])
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        '1' => 'Priority 1 (Critical)',
+                        '2' => 'Priority 2 (High)',
+                        '3' => 'Priority 3 (High-Medium)',
+                        '4' => 'Priority 4 (Medium)',
+                        '5' => 'Priority 5 (Medium-Low)',
+                        '6' => 'Priority 6 (Low)',
+                        '7' => 'Priority 7 (Very Low)',
+                        default => 'Unknown',
+                    })
+                    ->label('Priority'),
+
+                Tables\Columns\TextColumn::make('required_service')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'MECHANICAL' => 'info',
+                        'PROGRAMMING' => 'warning',
+                        'BOTH' => 'danger',
+                        'NONE' => 'gray',
+                        default => 'gray',
+                    })
+                    ->label('Required Service'),
+
+                Tables\Columns\TextColumn::make('user.name')
+                    ->searchable()
+                    ->label('Assigned User'),
+
+                Tables\Columns\TextColumn::make('match.number')
+                    ->label('Match #'),
+
+                Tables\Columns\TextColumn::make('started_at')
+                    ->dateTime()
+                    ->label('Started At')
                     ->sortable(),
 
-                TextColumn::make('started_at')
-                    ->label('Started')
-                    ->dateTime('M d, H:i')
-                    ->sortable()
-                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('completed_at')
+                    ->dateTime()
+                    ->label('Completed At')
+                    ->sortable(),
 
-                TextColumn::make('completed_at')
-                    ->label('Completed')
-                    ->dateTime('M d, H:i')
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()
                     ->sortable()
-                    ->placeholder('—'),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                TextColumn::make('elapsed_time')
-                    ->label('Elapsed Time')
-                    ->state(function (ServiceTask $record): ?string {
-                        $stateMachine = new TaskStateMachine();
-                        return $stateMachine->getElapsedTime($record);
-                    })
-                    ->default('—'),
+                Tables\Columns\TextColumn::make('updated_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -209,6 +253,25 @@ class ServiceTaskResource extends Resource
                         'BLOCKED' => 'Blocked',
                         'COMPLETED' => 'Completed',
                         'CANCELLED' => 'Cancelled',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('priority')
+                    ->options([
+                        '1' => 'Priority 1 (Critical)',
+                        '2' => 'Priority 2 (High)',
+                        '3' => 'Priority 3 (High-Medium)',
+                        '4' => 'Priority 4 (Medium)',
+                        '5' => 'Priority 5 (Medium-Low)',
+                        '6' => 'Priority 6 (Low)',
+                        '7' => 'Priority 7 (Very Low)',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('required_service')
+                    ->options([
+                        'MECHANICAL' => 'Mechanical',
+                        'PROGRAMMING' => 'Programming',
+                        'BOTH' => 'Both',
+                        'NONE' => 'None',
                     ]),
 
                 Tables\Filters\SelectFilter::make('assigned_team')
