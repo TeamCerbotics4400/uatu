@@ -10,10 +10,6 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramService
 {
-    /**
-     * Envia un mensaje a un usuario y deja registro en telegram_messages.
-     * Devuelve el registro creado; su campo status dice si salio o fallo.
-     */
     public function sendToUser(User $user, string $text): TelegramMessage
     {
         $message = TelegramMessage::create([
@@ -30,9 +26,6 @@ class TelegramService
         return $this->dispatch($message);
     }
 
-    /**
-     * Envia a un chat_id suelto (grupo, canal o alguien sin User asociado).
-     */
     public function sendToChat(string $chatId, string $text): TelegramMessage
     {
         $message = TelegramMessage::create([
@@ -44,10 +37,20 @@ class TelegramService
         return $this->dispatch($message);
     }
 
-    /**
-     * Registra la URL del webhook en Telegram. Se corre una sola vez por
-     * ambiente (o cuando cambia la URL publica).
-     */
+    public function sendWithInlineKeyboard(string $chatId, string $text, array $buttons): array
+    {
+        $payload = [
+            'chat_id' => $chatId,
+            'text' => $text,
+            'parse_mode' => config('telegram.parse_mode'),
+            'reply_markup' => json_encode([
+                'inline_keyboard' => $buttons
+            ])
+        ];
+
+        return $this->call('sendMessage', $payload);
+    }
+
     public function setWebhook(string $url): array
     {
         return $this->call('setWebhook', [
@@ -67,19 +70,11 @@ class TelegramService
         return $this->call('getWebhookInfo');
     }
 
-    /**
-     * Comprueba que el token es valido. Devuelve los datos del bot.
-     */
     public function getMe(): array
     {
         return $this->call('getMe');
     }
 
-    /**
-     * Lee los updates pendientes por polling. Sirve para descubrir chat_ids
-     * durante las primeras pruebas, cuando todavia no hay webhook (Telegram
-     * no permite usar getUpdates y webhook al mismo tiempo).
-     */
     public function getUpdates(int $limit = 20): array
     {
         return $this->call('getUpdates', ['limit' => $limit]);
@@ -115,10 +110,6 @@ class TelegramService
         return $message->refresh();
     }
 
-    /**
-     * Llama a un metodo de la Bot API. Nunca lanza: devuelve el cuerpo de la
-     * respuesta, o un arreglo con ok=false describiendo el fallo.
-     */
     private function call(string $method, array $params = []): array
     {
         $token = config('telegram.bot_token');
@@ -146,7 +137,6 @@ class TelegramService
 
         $body = $response->json() ?? [];
 
-        // El token va en la URL, asi que se registra el metodo, nunca la URL.
         Log::info('Telegram: respuesta de la API', [
             'method' => $method,
             'http_status' => $response->status(),
