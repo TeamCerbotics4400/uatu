@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('service_tasks', function (Blueprint $table) {
             $table->id();
-
             $table->enum('status', [
                 'PENDING',
                 'ASSIGNED',
@@ -23,13 +22,29 @@ return new class extends Migration
                 'CANCELLED'
             ])->default('PENDING');
 
-            // Foreign key to `teams` table (BigInteger)
+            // Foreign key to `teams` table (UUID)
             $table->foreignUuid('assigned_team')
                 ->nullable()
                 ->constrained('teams')
                 ->nullOnDelete();
 
-            // Foreign key to `users` table (UUID string)
+            // Priority: 1 (highest) to 7 (lowest)
+            $table->enum('priority', ['1', '2', '3', '4', '5', '6', '7'])
+                ->default('4')
+                ->comment('Priority level: 1 (critical) to 7 (very low)');
+
+            // Required service type for this task
+            $table->enum('required_service', ['MECHANICAL', 'PROGRAMMING', 'BOTH', 'NONE'])
+                ->default('NONE')
+                ->comment('Type of service required for this task');
+
+            // Foreign key to `matches` table (BigInteger)
+            $table->unsignedBigInteger('match_id')
+                ->nullable()
+                ->constrained('matches')
+                ->nullOnDelete();
+
+            // Foreign key to `users` table (UUID)
             $table->foreignUuid('assigned_user')
                 ->nullable()
                 ->constrained('users')
@@ -37,10 +52,9 @@ return new class extends Migration
 
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
-
             $table->timestamps();
-
             $table->index('status');
+            $table->index('priority');
         });
     }
 

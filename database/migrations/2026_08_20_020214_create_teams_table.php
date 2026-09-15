@@ -14,8 +14,6 @@ return new class extends Migration
         Schema::create('teams', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name');
-            $table->enum('priority', ['1', '2', '3', '4', '5', '6', '7']);
-            $table->enum('required_service', ['MECHANICAL', 'PROGRAMMING', 'BOTH', 'NONE']);
             $table->enum('current_service_status', ['IN_PROGRESS', 'DONE', 'NOT_HELPED', 'PAUSE'])->default('NOT_HELPED');
             $table->timestamps();
         });

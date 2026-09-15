@@ -14,11 +14,25 @@ return new class extends Migration
     {
         Schema::create('mxtasks', function (Blueprint $table) {
             $table->id();
-            $table->enum('type', ['PIT', 'MATCH']);
-            $table->enum('status', ['IN_PROGRESS']);
+            $table->enum('type', ['PIT', 'MATCH', 'CHECKLIST', 'PIT_CHECKLIST']);
+            $table->enum('status', ['PENDING', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])->default('PENDING');
             
-            // Replaces unsignedBigInteger and foreign() call
-            $table->foreignUuid('assigned_user')
+            $table->foreignUuid('assigned_user_1')
+                  ->nullable()
+                  ->constrained('users')
+                  ->nullOnDelete();
+
+            $table->foreignUuid('assigned_user_2')
+                  ->nullable()
+                  ->constrained('users')
+                  ->nullOnDelete();
+
+            $table->foreignUuid('assigned_user_3')
+                  ->nullable()
+                  ->constrained('users')
+                  ->nullOnDelete();
+
+            $table->foreignUuid('assigned_user_4')
                   ->nullable()
                   ->constrained('users')
                   ->nullOnDelete();

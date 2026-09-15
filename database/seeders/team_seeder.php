@@ -9,13 +9,11 @@ class team_seeder extends Seeder
 {
     public function run(): void
     {
-        $countries = ['Mexico', 'USA', 'Canada', 'Japan', 'Brazil'];
+        $countries = ['Mexico', 'USA', 'Canada', 'Japan', 'Brazil', 'Kazakhstan'];
 
         foreach ($countries as $country) {
             Team::create([
                 'name' => $country,
-                'priority' => '1',
-                'required_service' => 'NONE',
                 'current_service_status' => 'NOT_HELPED',
             ]);
         }

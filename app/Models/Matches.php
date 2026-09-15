@@ -2,13 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Matches extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
         'number',
         'blue_1',
@@ -19,38 +18,70 @@ class Matches extends Model
         'red_3',
     ];
 
-    protected $casts = [
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-    ];
+    public function serviceTasks(): HasMany
+    {
+        return $this->hasMany(ServiceTask::class, 'match_id');
+    }
 
-    public function blue1Team()
-{
-    return $this->belongsTo(Team::class, 'blue_1');
-}
+    /**
+     * Obtiene los matches que participan los equipos
+     */
+    public static function getMatchesForTeam(string $teamId)
+    {
+        return self::where(function ($query) use ($teamId) {
+            $query->where('blue_1', $teamId)
+                  ->orWhere('blue_2', $teamId)
+                  ->orWhere('blue_3', $teamId)
+                  ->orWhere('red_1', $teamId)
+                  ->orWhere('red_2', $teamId)
+                  ->orWhere('red_3', $teamId);
+        });
+    }
 
-public function blue2Team()
-{
-    return $this->belongsTo(Team::class, 'blue_2');
-}
+    /**
+     * Obtiene el estado de servicio de un equipo en un match específico
+     * Retorna: 'completed' | 'in_progress' | 'pending'
+     * 
+     * Color mapping:
+     * - 'pending' → rojo (danger)
+     * - 'in_progress' → amarillo (warning)
+     * - 'completed' → verde (success)
+     */
+    public static function getTeamServiceStatus(?string $teamId): string
+    {
+        if (!$teamId) {
+            return 'pending';
+        }
 
-public function blue3Team()
-{
-    return $this->belongsTo(Team::class, 'blue_3');
-}
+        $tasks = ServiceTask::where('assigned_team', $teamId)
+            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'])
+            ->get();
 
-public function red1Team()
-{
-    return $this->belongsTo(Team::class, 'red_1');
-}
+        if ($tasks->isEmpty()) {
+            return 'pending';
+        }
 
-public function red2Team()
-{
-    return $this->belongsTo(Team::class, 'red_2');
-}
+        // Si todas las tareas están completadas
+        if ($tasks->every(fn ($task) => $task->status === 'COMPLETED')) {
+            return 'completed';
+        }
 
-public function red3Team()
-{
-    return $this->belongsTo(Team::class, 'red_3');
-}
+        // Si hay al menos una tarea activa (ASSIGNED, IN_PROGRESS, BLOCKED)
+        if ($tasks->contains(fn ($task) => in_array($task->status, ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED']))) {
+            return 'in_progress';
+        }
+
+        return 'pending';
+    }
+
+    /**
+     * Obtiene las tareas de servicio de un equipo en este match, ordenadas por prioridad
+     */
+    public function getTeamTasksByPriority(string $teamId)
+    {
+        return $this->serviceTasks()
+            ->where('assigned_team', $teamId)
+            ->orderBy('priority')
+            ->get();
+    }
 }
