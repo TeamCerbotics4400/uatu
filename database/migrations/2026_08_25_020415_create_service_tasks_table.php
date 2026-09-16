@@ -38,16 +38,26 @@ return new class extends Migration
                 ->default('NONE')
                 ->comment('Type of service required for this task');
 
+            // Up to 3 users can be assigned to a service task
+            $table->foreignUuid('assigned_user_1')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+
+            $table->foreignUuid('assigned_user_2')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+
+            $table->foreignUuid('assigned_user_3')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+
             // Foreign key to `matches` table (BigInteger)
             $table->unsignedBigInteger('match_id')
                 ->nullable()
                 ->constrained('matches')
-                ->nullOnDelete();
-
-            // Foreign key to `users` table (UUID)
-            $table->foreignUuid('assigned_user')
-                ->nullable()
-                ->constrained('users')
                 ->nullOnDelete();
 
             $table->timestamp('started_at')->nullable();

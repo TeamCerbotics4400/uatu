@@ -10,7 +10,9 @@ class ServiceTask extends Model
     protected $fillable = [
         'status',
         'assigned_team',
-        'assigned_user',
+        'assigned_user_1',
+        'assigned_user_2',
+        'assigned_user_3',
         'priority',
         'required_service',
         'match_id',
@@ -31,15 +33,55 @@ class ServiceTask extends Model
     {
         return $this->belongsTo(Team::class, 'assigned_team');
     }
- 
-    public function user(): BelongsTo
+
+    public function user1(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'assigned_user');
+        return $this->belongsTo(User::class, 'assigned_user_1');
+    }
+
+    public function user2(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user_2');
+    }
+
+    public function user3(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user_3');
     }
 
     public function match(): BelongsTo
     {
         return $this->belongsTo(Matches::class, 'match_id');
+    }
+
+    /**
+     * Obtiene todos los usuarios asignados a esta tarea
+     */
+    public function getAssignedUsers(): array
+    {
+        $users = [];
+        
+        if ($this->assigned_user_1) {
+            $users[] = $this->user1;
+        }
+        if ($this->assigned_user_2) {
+            $users[] = $this->user2;
+        }
+        if ($this->assigned_user_3) {
+            $users[] = $this->user3;
+        }
+
+        return $users;
+    }
+
+    /**
+     * Obtiene los nombres de los usuarios asignados (para display)
+     */
+    public function getAssignedUserNames(): string
+    {
+        $users = $this->getAssignedUsers();
+        $names = array_map(fn ($user) => $user->name, $users);
+        return implode(', ', $names) ?: '—';
     }
 
     /**

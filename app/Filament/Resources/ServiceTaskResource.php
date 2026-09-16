@@ -90,17 +90,34 @@ class ServiceTaskResource extends Resource
                                     ->default('NONE')
                                     ->label('Required Service')
                                     ->columnSpanFull(),
+                            ])
+                            ->columns(2),
 
-                                Forms\Components\Select::make('assigned_user')
-                                    ->relationship('user', 'name')
+                        Forms\Components\Section::make('Assigned Users (Up to 3)')
+                            ->description('You can assign up to 3 users to this task.')
+                            ->schema([
+                                Forms\Components\Select::make('assigned_user_1')
+                                    ->relationship('user1', 'name')
                                     ->searchable()
                                     ->preload()
                                     ->nullable()
-                                    ->label('Assigned User')
-                                    ->hint('Selecting a user automatically assigns the task.')
-                                    ->columnSpanFull(),
+                                    ->label('User 1 (Primary)'),
+
+                                Forms\Components\Select::make('assigned_user_2')
+                                    ->relationship('user2', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->nullable()
+                                    ->label('User 2 (Optional)'),
+
+                                Forms\Components\Select::make('assigned_user_3')
+                                    ->relationship('user3', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->nullable()
+                                    ->label('User 3 (Optional)'),
                             ])
-                            ->columns(2),
+                            ->columns(1),
                     ])
                     ->columnSpan(['lg' => 2]),
 
@@ -217,9 +234,11 @@ class ServiceTaskResource extends Resource
                     })
                     ->label('Required Service'),
 
-                Tables\Columns\TextColumn::make('user.name')
-                    ->searchable()
-                    ->label('Assigned User'),
+                Tables\Columns\TextColumn::make('assigned_users')
+                    ->label('Assigned Users')
+                    ->getStateUsing(fn (ServiceTask $record): string => 
+                        $record->getAssignedUserNames()
+                    ),
 
                 Tables\Columns\TextColumn::make('match.number')
                     ->label('Match #'),
@@ -287,31 +306,45 @@ class ServiceTaskResource extends Resource
                     ->icon('heroicon-o-check')
                     ->visible(fn (ServiceTask $record): bool => $record->status === 'PENDING')
                     ->form([
-                        Forms\Components\Select::make('assigned_user')
-                            ->relationship('user', 'name')
+                        Forms\Components\Select::make('assigned_user_1')
+                            ->relationship('user1', 'name')
                             ->searchable()
                             ->preload()
-                            ->required()
-                            ->label('Select User'),
+                            ->label('User 1 (Required)'),
+
+                        Forms\Components\Select::make('assigned_user_2')
+                            ->relationship('user2', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->label('User 2 (Optional)'),
+
+                        Forms\Components\Select::make('assigned_user_3')
+                            ->relationship('user3', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->label('User 3 (Optional)'),
                     ])
                     ->action(function (ServiceTask $record, array $data): void {
+                        $record->update($data);
+                        
                         $stateMachine = new TaskStateMachine();
-                        $user = User::find($data['assigned_user']);
-                        if ($user) {
-                            $result = $stateMachine->toAssigned($record, $user);
-                            if ($result) {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Success')
-                                    ->body("Task assigned to {$user->name}")
-                                    ->success()
-                                    ->send();
-                            } else {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Error')
-                                    ->body('Cannot assign task. User may have active tasks.')
-                                    ->danger()
-                                    ->send();
-                            }
+                        $result = $stateMachine->toAssigned($record);
+                        
+                        if ($result) {
+                            $userNames = $record->getAssignedUserNames();
+                            \Filament\Notifications\Notification::make()
+                                ->title('Success')
+                                ->body("Task assigned to {$userNames}")
+                                ->success()
+                                ->send();
+                        } else {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Error')
+                                ->body('Cannot assign task. One or more users may have active tasks.')
+                                ->danger()
+                                ->send();
                         }
                     }),
 
@@ -395,7 +428,7 @@ class ServiceTaskResource extends Resource
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
-                                ->body('Task completed. User set to AVAILABLE.')
+                                ->body('Task completed. All assigned users set to AVAILABLE.')
                                 ->success()
                                 ->send();
                         } else {
@@ -419,7 +452,7 @@ class ServiceTaskResource extends Resource
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
-                                ->body('Task cancelled. User set to AVAILABLE.')
+                                ->body('Task cancelled. All assigned users set to AVAILABLE.')
                                 ->success()
                                 ->send();
                         } else {
