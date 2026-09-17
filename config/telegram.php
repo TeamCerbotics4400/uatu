@@ -32,4 +32,10 @@ return [
     'parse_mode' => env('TELEGRAM_PARSE_MODE', 'HTML'),
 
     'timeout' => (int) env('TELEGRAM_TIMEOUT', 30),
+
+    // Ruta relativa a public/ de la imagen que se manda con "Mapa de Pits".
+    'pit_map' => env('TELEGRAM_PIT_MAP', 'images/pit-map.png'),
+
+    // Nombres (separados por coma) que no aparecen en la lista de "Quien eres".
+    'hidden_users' => array_values(array_filter(array_map('trim', explode(',', env('TELEGRAM_HIDDEN_USERS', ''))))),
 ];

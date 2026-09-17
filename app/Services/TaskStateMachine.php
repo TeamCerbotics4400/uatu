@@ -143,6 +143,18 @@ class TaskStateMachine
         return $task->refresh();
     }
 
+    public function toUnblocked(ServiceTask $task): ServiceTask|false
+    {
+        if ($task->status !== 'BLOCKED') {
+            return false;
+        }
+
+        $task->update(['status' => 'IN_PROGRESS']);
+        $this->recordHistory($task, 'BLOCKED');
+
+        return $task->refresh();
+    }
+
     public function toPending(ServiceTask $task): ServiceTask|false
     {
         if (!in_array($task->status, ['ASSIGNED', 'PENDING'])) {
@@ -325,7 +337,7 @@ class TaskStateMachine
     /**
      * Verifica si un usuario tiene tarea activa (ServiceTask o MxTask)
      */
-    private function anyUserHasActiveTask(string $userId = null): bool
+    private function anyUserHasActiveTask(?string $userId = null): bool
     {
         if (!$userId) {
             return false;

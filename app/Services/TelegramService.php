@@ -37,18 +37,45 @@ class TelegramService
         return $this->dispatch($message);
     }
 
-    public function sendWithInlineKeyboard(string $chatId, string $text, array $buttons): array
+    public function sendWithInlineKeyboard(string $chatId, string $text, array $buttons = []): array
     {
         $payload = [
             'chat_id' => $chatId,
             'text' => $text,
             'parse_mode' => config('telegram.parse_mode'),
-            'reply_markup' => json_encode([
-                'inline_keyboard' => $buttons
-            ])
         ];
 
+        if ($buttons) {
+            $payload['reply_markup'] = json_encode(['inline_keyboard' => $buttons]);
+        }
+
         return $this->call('sendMessage', $payload);
+    }
+
+    public function sendPhoto(string $chatId, string $path, string $caption = '', array $buttons = []): array
+    {
+        $payload = [
+            'chat_id' => $chatId,
+            'caption' => $caption,
+            'parse_mode' => config('telegram.parse_mode'),
+        ];
+
+        if ($buttons) {
+            $payload['reply_markup'] = json_encode(['inline_keyboard' => $buttons]);
+        }
+
+        return $this->call('sendPhoto', $payload, $path);
+    }
+
+    public function answerCallbackQuery(string $callbackQueryId, ?string $text = null): array
+    {
+        $payload = ['callback_query_id' => $callbackQueryId];
+
+        if ($text !== null) {
+            $payload['text'] = $text;
+        }
+
+        return $this->call('answerCallbackQuery', $payload);
     }
 
     public function setWebhook(string $url): array
@@ -56,7 +83,17 @@ class TelegramService
         return $this->call('setWebhook', [
             'url' => $url,
             'secret_token' => config('telegram.webhook_secret'),
-            'allowed_updates' => ['message', 'callback_query'],
+            'allowed_updates' => ['message', 'callback_query', 'inline_query'],
+        ]);
+    }
+
+    public function answerInlineQuery(string $inlineQueryId, array $results): array
+    {
+        return $this->call('answerInlineQuery', [
+            'inline_query_id' => $inlineQueryId,
+            'results' => json_encode($results),
+            'cache_time' => 0,
+            'is_personal' => true,
         ]);
     }
 
@@ -110,7 +147,7 @@ class TelegramService
         return $message->refresh();
     }
 
-    private function call(string $method, array $params = []): array
+    private function call(string $method, array $params = [], ?string $photoPath = null): array
     {
         $token = config('telegram.bot_token');
 
@@ -123,9 +160,15 @@ class TelegramService
         $url = rtrim(config('telegram.api_url'), '/') . "/bot{$token}/{$method}";
 
         try {
-            $response = Http::timeout(config('telegram.timeout'))
-                ->asJson()
-                ->post($url, $params);
+            $request = Http::timeout(config('telegram.timeout'));
+
+            if ($photoPath !== null) {
+                $response = $request
+                    ->attach('photo', file_get_contents($photoPath), basename($photoPath))
+                    ->post($url, $params);
+            } else {
+                $response = $request->asJson()->post($url, $params);
+            }
         } catch (ConnectionException $e) {
             Log::error('Telegram: fallo de conexion', [
                 'method' => $method,

@@ -14,12 +14,14 @@ class User extends Model
         'id',
         'name',
         'status',
+        'is_admin',
         'phone_number',
         'telegram_chat_id',
         'telegram_username',
     ];
 
     protected $casts = [
+        'is_admin' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
