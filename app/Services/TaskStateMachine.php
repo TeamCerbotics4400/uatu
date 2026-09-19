@@ -14,22 +14,68 @@ class TaskStateMachine
     // SERVICETASK METHODS
     // =====================================================
 
-    public function toAssigned(ServiceTask $task, User $user): ServiceTask|false
+    /**
+     * Verifica si al menos un usuario está asignado
+     */
+    public function hasAssignedUsers(ServiceTask $task): bool
+    {
+        return $task->assigned_user_1 || $task->assigned_user_2 || $task->assigned_user_3;
+    }
+
+    /**
+     * Marca los usuarios asignados como BUSY (si no lo están ya)
+     */
+    private function markUsersAsBusy(ServiceTask $task): void
+    {
+        $userIds = [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3];
+
+        foreach ($userIds as $userId) {
+            if ($userId) {
+                $user = User::find($userId);
+                if ($user && $user->status !== 'BUSY') {
+                    $user->update(['status' => 'BUSY']);
+                }
+            }
+        }
+    }
+
+    /**
+     * Marca los usuarios asignados como AVAILABLE (cuando se completa/cancela)
+     */
+    private function releaseServiceTaskUsers(ServiceTask $task): void
+    {
+        $userIds = [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3];
+
+        foreach ($userIds as $userId) {
+            if ($userId) {
+                $user = User::find($userId);
+                if ($user) {
+                    $user->update(['status' => 'AVAILABLE']);
+                }
+            }
+        }
+    }
+
+    public function toAssigned(ServiceTask $task): ServiceTask|false
     {
         if ($task->status !== 'PENDING') {
             return false;
         }
 
-        if ($this->userHasActiveTask($user->id)) {
+        // Verificar que hay al menos un usuario asignado
+        if (!$this->hasAssignedUsers($task)) {
             return false;
         }
 
-        $task->update([
-            'status' => 'ASSIGNED',
-            'assigned_user' => $user->id,
-        ]);
+        // Verificar que ninguno de los usuarios tiene tareas activas
+        if ($this->anyUserHasActiveTask($task->assigned_user_1) ||
+            $this->anyUserHasActiveTask($task->assigned_user_2) ||
+            $this->anyUserHasActiveTask($task->assigned_user_3)) {
+            return false;
+        }
 
-        $user->update(['status' => 'BUSY']);
+        $task->update(['status' => 'ASSIGNED']);
+        $this->markUsersAsBusy($task);
         $this->recordHistory($task, 'PENDING');
 
         return $task->refresh();
@@ -61,12 +107,7 @@ class TaskStateMachine
             'completed_at' => Carbon::now(),
         ]);
 
-        if ($task->assigned_user) {
-            $user = User::find($task->assigned_user);
-            if ($user) {
-                $user->update(['status' => 'AVAILABLE']);
-            }
-        }
+        $this->releaseServiceTaskUsers($task);
         $this->recordHistory($task, 'IN_PROGRESS');
 
         return $task->refresh();
@@ -84,12 +125,7 @@ class TaskStateMachine
             'completed_at' => Carbon::now(),
         ]);
 
-        if ($task->assigned_user) {
-            $user = User::find($task->assigned_user);
-            if ($user) {
-                $user->update(['status' => 'AVAILABLE']);
-            }
-        }
+        $this->releaseServiceTaskUsers($task);
         $this->recordHistory($task, $previousState);
 
         return $task->refresh();
@@ -107,6 +143,18 @@ class TaskStateMachine
         return $task->refresh();
     }
 
+    public function toUnblocked(ServiceTask $task): ServiceTask|false
+    {
+        if ($task->status !== 'BLOCKED') {
+            return false;
+        }
+
+        $task->update(['status' => 'IN_PROGRESS']);
+        $this->recordHistory($task, 'BLOCKED');
+
+        return $task->refresh();
+    }
+
     public function toPending(ServiceTask $task): ServiceTask|false
     {
         if (!in_array($task->status, ['ASSIGNED', 'PENDING'])) {
@@ -116,9 +164,13 @@ class TaskStateMachine
         $previousState = $task->status;
         $task->update([
             'status' => 'PENDING',
-            'assigned_user' => null,
+            'assigned_user_1' => null,
+            'assigned_user_2' => null,
+            'assigned_user_3' => null,
             'started_at' => null,
         ]);
+        
+        $this->releaseServiceTaskUsers($task);
         $this->recordHistory($task, $previousState);
 
         return $task->refresh();
@@ -130,7 +182,9 @@ class TaskStateMachine
             'id' => $task->id,
             'status' => $task->status,
             'assigned_team' => $task->assigned_team,
-            'assigned_user' => $task->assigned_user,
+            'assigned_user_1' => $task->assigned_user_1,
+            'assigned_user_2' => $task->assigned_user_2,
+            'assigned_user_3' => $task->assigned_user_3,
             'started_at' => $task->started_at,
             'completed_at' => $task->completed_at,
             'elapsed_time' => $this->getElapsedTime($task),
@@ -280,11 +334,22 @@ class TaskStateMachine
     // PRIVATE HELPER METHODS
     // =====================================================
 
-    private function userHasActiveTask(string $userId): bool
+    /**
+     * Verifica si un usuario tiene tarea activa (ServiceTask o MxTask)
+     */
+    private function anyUserHasActiveTask(?string $userId = null): bool
     {
-        $activeStatusesService = ServiceTask::where('assigned_user', $userId)
-            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
-            ->exists();
+        if (!$userId) {
+            return false;
+        }
+
+        $activeStatusesService = ServiceTask::where(function ($query) use ($userId) {
+            $query->where('assigned_user_1', $userId)
+                  ->orWhere('assigned_user_2', $userId)
+                  ->orWhere('assigned_user_3', $userId);
+        })
+        ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
+        ->exists();
 
         $activeStatusesMx = MxTask::whereIn('status', ['IN_PROGRESS'])
             ->where(function ($query) use ($userId) {
@@ -322,11 +387,14 @@ class TaskStateMachine
 
     private function recordHistory(ServiceTask $task, string $previousState): void
     {
+        // Usar el primer usuario asignado como responsable del registro
+        $userId = $task->assigned_user_1 ?? $task->assigned_user_2 ?? $task->assigned_user_3;
+
         TaskHistory::create([
             'service_task_id' => $task->id,
             'previous_state' => $previousState,
             'new_state' => $task->status,
-            'user_id' => $task->assigned_user,
+            'user_id' => $userId,
         ]);
     }
 }

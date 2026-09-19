@@ -6,10 +6,15 @@ use App\Http\Controllers\Api\MatchesController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\MxTaskController;
 use App\Http\Controllers\Api\ServiceTaskController;
+use App\Http\Controllers\Webhooks\TelegramWebhookController;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+// Telegram entrega los updates aqui. La ruta esta exenta de CSRF en
+// bootstrap/app.php y se autentica con el secret token del header.
+Route::post('/webhooks/telegram', [\App\Http\Controllers\Webhooks\TelegramWebhookController::class, 'handle']);
 
 Route::prefix('api')->group(function () {
     // Users routes
