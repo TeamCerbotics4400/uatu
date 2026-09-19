@@ -1030,11 +1030,11 @@ class TelegramBot
                 return;
 
             case 'block':
-                $this->requireTransition($chatId, $this->tasks->toBlocked($task), 'bloquear');
+                $this->requireTransition($chatId, $this->tasks->toBlocked($task), 'suspender');
                 break;
 
             case 'unblock':
-                $this->requireTransition($chatId, $this->tasks->toUnblocked($task), 'desbloquear');
+                $this->requireTransition($chatId, $this->tasks->toUnblocked($task), 'reanudar');
                 break;
 
             case 'cancel':
@@ -1078,7 +1078,7 @@ class TelegramBot
                 break;
 
             case 'block':
-                $this->requireTransition($chatId, $this->tasks->mxBlock($task), 'bloquear');
+                $this->requireTransition($chatId, $this->tasks->mxBlock($task), 'suspender');
                 break;
 
             case 'unblock':
@@ -1247,9 +1247,9 @@ class TelegramBot
             $help = ['text' => 'Pedir ayuda', 'callback_data' => "act:st:{$id}:help"];
 
             if ($task->status === 'BLOCKED') {
-                $rows[] = [['text' => 'Desbloquear', 'callback_data' => "act:st:{$id}:unblock"], $cancel];
+                $rows[] = [['text' => 'Reanudar tarea', 'callback_data' => "act:st:{$id}:unblock"], $cancel];
                 if ($me->status === 'ACTIVE') {
-                    $rows[] = [['text' => 'Suspender', 'callback_data' => "act:st:{$id}:suspend"], $help];
+                    $rows[] = [['text' => 'Suspender mi parte', 'callback_data' => "act:st:{$id}:suspend"], $help];
                 } else {
                     $rows[] = [$help];
                 }
@@ -1258,14 +1258,14 @@ class TelegramBot
                 $rows[] = [$help];
             } elseif ($me->status === 'ACTIVE') {
                 $rows[] = [
-                    ['text' => 'Suspender', 'callback_data' => "act:st:{$id}:suspend"],
+                    ['text' => 'Suspender mi parte', 'callback_data' => "act:st:{$id}:suspend"],
                     ['text' => 'Terminar mi parte', 'callback_data' => "act:st:{$id}:done"],
                 ];
-                $rows[] = [['text' => 'Susoender', 'callback_data' => "act:st:{$id}:block"], $cancel];
+                $rows[] = [['text' => 'Suspender tarea', 'callback_data' => "act:st:{$id}:block"], $cancel];
                 $rows[] = [$help];
             } elseif ($me->status === 'SUSPENDED') {
                 $rows[] = [
-                    ['text' => 'Reanudar', 'callback_data' => "act:st:{$id}:start"],
+                    ['text' => 'Reanudar mi parte', 'callback_data' => "act:st:{$id}:start"],
                     ['text' => 'Terminar mi parte', 'callback_data' => "act:st:{$id}:done"],
                 ];
                 $rows[] = [$cancel, $help];

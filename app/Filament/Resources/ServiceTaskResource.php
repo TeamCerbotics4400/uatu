@@ -359,7 +359,7 @@ class ServiceTaskResource extends Resource
                     }),
 
                 Action::make('suspend_user')
-                    ->label('Suspend')
+                    ->label('Suspend part')
                     ->icon('heroicon-o-pause')
                     ->color('primary')
                     ->visible(fn (ServiceTask $record): bool => $record->participants->where('status', 'ACTIVE')->isNotEmpty())
@@ -390,25 +390,25 @@ class ServiceTaskResource extends Resource
                     }),
 
                 Action::make('block')
-                    ->label('Block')
+                    ->label('Suspend task')
                     ->icon('heroicon-o-hand-raised')
                     ->visible(fn (ServiceTask $record): bool => in_array($record->status, ['IN_PROGRESS', 'SUSPENDED']))
                     ->color('warning')
                     ->action(function (ServiceTask $record): void {
                         $result = (new TaskStateMachine())->toBlocked($record);
 
-                        static::notify($result !== false, 'Task blocked', 'Cannot block task in current state');
+                        static::notify($result !== false, 'Task suspended for everyone', 'Cannot suspend task in current state');
                     }),
 
                 Action::make('unblock')
-                    ->label('Unblock')
+                    ->label('Resume task')
                     ->icon('heroicon-o-arrow-path')
                     ->visible(fn (ServiceTask $record): bool => $record->status === 'BLOCKED')
                     ->color('info')
                     ->action(function (ServiceTask $record): void {
                         $result = (new TaskStateMachine())->toUnblocked($record);
 
-                        static::notify($result !== false, 'Task unblocked', 'Cannot unblock task in current state');
+                        static::notify($result !== false, 'Task resumed', 'Cannot resume task in current state');
                     }),
 
                 Action::make('cancel')
