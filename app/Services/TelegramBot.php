@@ -80,6 +80,11 @@ class TelegramBot
             return;
         }
 
+        if ($flow && $flow['flow'] === 'st' && $flow['step'] === 'match_number') {
+            $this->adminOnly($user, $chatId, fn () => $this->stMatchNumberReceived($chatId, $flow, $text));
+            return;
+        }
+
         if (isset($message['via_bot']) && preg_match('/^Equipo: (.+)$/u', $text, $m)) {
             $this->inlineTeamChosen($chatId, $user, $flow, trim($m[1]));
             return;
@@ -631,7 +636,6 @@ class TelegramBot
             ],
         ]);
 
-        $this->notifyMxAssignees($task);
     }
 
     private function stFlow(string $chatId, array $parts): void
@@ -639,11 +643,9 @@ class TelegramBot
         $step = $parts[0] ?? '';
 
         if ($step === 'new') {
-            $this->setFlow($chatId, ['flow' => 'st', 'step' => 'match', 'data' => []]);
+            $numbers = Matches::orderBy('number')->pluck('number');
 
-            $matches = Matches::orderBy('number')->get();
-
-            if ($matches->isEmpty()) {
+            if ($numbers->isEmpty()) {
                 $this->clearFlow($chatId);
                 $this->send($chatId, 'No hay matches creados. Crea uno primero.', [
                     [
@@ -654,12 +656,13 @@ class TelegramBot
                 return;
             }
 
-            $buttons = $matches
-                ->map(fn (Matches $m) => [['text' => "Match #{$m->number}", 'callback_data' => "st:match:{$m->id}"]])
-                ->all();
-            $buttons[] = [['text' => 'Cancelar', 'callback_data' => 'cancel']];
+            $this->setFlow($chatId, ['flow' => 'st', 'step' => 'match_number', 'data' => []]);
 
-            $this->send($chatId, "<b>CREAR SERVICETASK</b>\nSelecciona el Match:", $buttons);
+            $this->send(
+                $chatId,
+                "<b>CREAR SERVICETASK</b>\nEscribe el numero del match.\n\nRegistrados: " . $numbers->implode(', '),
+                [[['text' => 'Cancelar', 'callback_data' => 'cancel']]]
+            );
             return;
         }
 
@@ -674,28 +677,9 @@ class TelegramBot
         if ($step === 'match') {
             $match = Matches::find($parts[1] ?? 0);
 
-            if (!$match) {
-                return;
+            if ($match) {
+                $this->stMatchSelected($chatId, $flow, $match);
             }
-
-            $flow['data']['match_id'] = $match->id;
-            $flow['step'] = 'team';
-            $this->setFlow($chatId, $flow);
-
-            $teamIds = array_filter([$match->blue_1, $match->blue_2, $match->blue_3, $match->red_1, $match->red_2, $match->red_3]);
-            $names = Team::whereIn('id', $teamIds)->pluck('name', 'id');
-
-            $buttons = [];
-            foreach (self::MATCH_SLOTS as $slot) {
-                $id = $match->{$slot};
-                if ($id && isset($names[$id])) {
-                    $label = strtoupper(str_replace('_', ' ', $slot));
-                    $buttons[] = [['text' => "{$names[$id]} ({$label})", 'callback_data' => "st:team:{$id}"]];
-                }
-            }
-            $buttons[] = [$this->searchTeamButton(), ['text' => 'Cancelar', 'callback_data' => 'cancel']];
-
-            $this->send($chatId, "Match #{$match->number}\nSelecciona el equipo:", $buttons);
             return;
         }
 
@@ -797,6 +781,57 @@ class TelegramBot
         $this->send($chatId, "Asigna Usuario {$n} de 3:", $buttons);
     }
 
+    private function stMatchNumberReceived(string $chatId, array $flow, string $text): void
+    {
+        $retry = [[['text' => 'Cancelar', 'callback_data' => 'cancel']]];
+        $number = ltrim(trim($text), '#');
+
+        if (!ctype_digit($number)) {
+            $this->send($chatId, 'Escribe solo el numero del match.', $retry);
+            return;
+        }
+
+        $match = Matches::where('number', (int) $number)->first();
+
+        if (!$match) {
+            $registered = Matches::orderBy('number')->pluck('number')->implode(', ');
+            $this->send($chatId, "No existe el match #{$number}.\nRegistrados: {$registered}", $retry);
+            return;
+        }
+
+        $this->stMatchSelected($chatId, $flow, $match);
+    }
+
+    private function stMatchSelected(string $chatId, array $flow, Matches $match): void
+    {
+        $flow['data']['match_id'] = $match->id;
+        $flow['step'] = 'team';
+        $this->setFlow($chatId, $flow);
+
+        $teamIds = array_filter([$match->blue_1, $match->blue_2, $match->blue_3, $match->red_1, $match->red_2, $match->red_3]);
+        $names = Team::whereIn('id', $teamIds)->pluck('name', 'id');
+
+        $buttons = [];
+        foreach (self::MATCH_SLOTS as $slot) {
+            $id = $match->{$slot};
+            if ($id && isset($names[$id])) {
+                $buttons[] = [['text' => "{$names[$id]} ({$this->slotLabel($slot)})", 'callback_data' => "st:team:{$id}"]];
+            }
+        }
+
+        if (!$buttons) {
+            $this->clearFlow($chatId);
+            $this->send($chatId, "El match #{$match->number} no tiene equipos registrados.", [
+                [['text' => 'Volver al Menu', 'callback_data' => 'menu']],
+            ]);
+            return;
+        }
+
+        $buttons[] = [$this->searchTeamButton(), ['text' => 'Cancelar', 'callback_data' => 'cancel']];
+
+        $this->send($chatId, "<b>Match #{$match->number}</b>\nSelecciona el equipo:", $buttons);
+    }
+
     private function stTeamSelected(string $chatId, array $flow, Team $team): void
     {
         $flow['data']['team_id'] = $team->id;
@@ -816,7 +851,9 @@ class TelegramBot
     {
         $users = $data['users'] ?? [];
 
-        $task = ServiceTask::create([
+        // Sin eventos: el observer notificaria con estado PENDING antes de que
+        // toAssigned corra. Aqui se notifica a mano con el estado final.
+        $task = ServiceTask::withoutEvents(fn () => ServiceTask::create([
             'status' => 'PENDING',
             'assigned_team' => $data['team_id'],
             'match_id' => $data['match_id'],
@@ -825,15 +862,16 @@ class TelegramBot
             'assigned_user_1' => $users[1] ?? null,
             'assigned_user_2' => $users[2] ?? null,
             'assigned_user_3' => $users[3] ?? null,
-        ]);
+        ]));
 
         $note = '';
 
         if ($users) {
             if ($this->tasks->toAssigned($task)) {
                 $task->refresh();
-                $this->notifyServiceAssignees($task);
+                $this->notifyAssigned($task, array_values($users));
             } else {
+                $this->notifyAssigned($task, array_values($users));
                 $note = "\n\nNo se pudo pasar a ASSIGNED: alguno de los usuarios ya tiene una tarea activa. La tarea quedo PENDING.";
             }
         }
@@ -884,7 +922,7 @@ class TelegramBot
                     ->orWhere('assigned_user_2', $user->id)
                     ->orWhere('assigned_user_3', $user->id);
             })
-            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED'])
+            ->whereIn('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'BLOCKED'])
             ->orderBy('priority')
             ->get();
 
@@ -938,7 +976,11 @@ class TelegramBot
                 break;
 
             case 'start':
-                $this->requireTransition($chatId, $this->tasks->toInProgress($task), 'iniciar');
+                if ($task->status === 'PENDING' && $this->tasks->toAssigned($task) === false) {
+                    $this->send($chatId, 'No se puede iniciar: alguno de los usuarios asignados ya tiene otra tarea activa.');
+                    return;
+                }
+                $this->requireTransition($chatId, $this->tasks->toInProgress($task->refresh()), 'iniciar');
                 break;
 
             case 'block':
@@ -1102,22 +1144,25 @@ class TelegramBot
     // Notificaciones a asignados
     // -------------------------------------------------------------------
 
-    private function notifyServiceAssignees(ServiceTask $task): void
+    public function notifyAssigned(ServiceTask|MxTask $task, array $userIds): void
     {
-        $ids = array_filter([$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3]);
-        $task->load(['team', 'match']);
+        $recipients = User::whereIn('id', $userIds)->whereNotNull('telegram_chat_id')->get();
 
-        foreach (User::whereIn('id', $ids)->whereNotNull('telegram_chat_id')->get() as $user) {
-            $this->send($user->telegram_chat_id, "<b>Te asignaron una ServiceTask</b>\n\n" . $this->serviceTaskCard($task), $this->serviceTaskButtons($task));
+        if ($recipients->isEmpty()) {
+            return;
         }
-    }
 
-    private function notifyMxAssignees(MxTask $task): void
-    {
-        $ids = array_filter([$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3, $task->assigned_user_4]);
+        if ($task instanceof ServiceTask) {
+            $task->load(['team', 'match']);
+            $text = "<b>Te asignaron una ServiceTask</b>\n\n" . $this->serviceTaskCard($task);
+            $buttons = $this->serviceTaskButtons($task);
+        } else {
+            $text = "<b>Te asignaron una MxTask</b>\n\n" . $this->mxTaskCard($task);
+            $buttons = $this->mxTaskButtons($task);
+        }
 
-        foreach (User::whereIn('id', $ids)->whereNotNull('telegram_chat_id')->get() as $user) {
-            $this->send($user->telegram_chat_id, "<b>Te asignaron una MxTask</b>\n\n" . $this->mxTaskCard($task), $this->mxTaskButtons($task));
+        foreach ($recipients as $user) {
+            $this->send($user->telegram_chat_id, $text, $buttons);
         }
     }
 
@@ -1152,7 +1197,7 @@ class TelegramBot
         $id = $task->id;
 
         $rows = match ($task->status) {
-            'ASSIGNED' => [[
+            'PENDING', 'ASSIGNED' => [[
                 ['text' => 'Iniciar', 'callback_data' => "act:st:{$id}:start"],
                 ['text' => 'Cancelar', 'callback_data' => "act:st:{$id}:cancel"],
             ]],
