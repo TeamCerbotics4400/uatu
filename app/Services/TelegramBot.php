@@ -25,6 +25,13 @@ class TelegramBot
 
     private const SERVICES = ['MECHANICAL', 'PROGRAMMING', 'BOTH', 'NONE'];
 
+    private const PARTICIPANT_LABELS = [
+        'ASSIGNED' => 'asignado',
+        'ACTIVE' => 'activo',
+        'SUSPENDED' => 'suspendido',
+        'DONE' => 'terminado',
+    ];
+
     public function __construct(
         private TelegramService $telegram,
         private TaskStateMachine $tasks,
@@ -864,20 +871,14 @@ class TelegramBot
             'assigned_user_3' => $users[3] ?? null,
         ]));
 
-        $note = '';
-
         if ($users) {
-            if ($this->tasks->toAssigned($task)) {
-                $task->refresh();
-                $this->notifyAssigned($task, array_values($users));
-            } else {
-                $this->notifyAssigned($task, array_values($users));
-                $note = "\n\nNo se pudo pasar a ASSIGNED: alguno de los usuarios ya tiene una tarea activa. La tarea quedo PENDING.";
-            }
+            $this->tasks->toAssigned($task);
+            $task->refresh();
+            $this->notifyAssigned($task, array_values($users));
         }
 
         $this->clearFlow($chatId);
-        $this->send($chatId, "<b>ServiceTask creada</b>\n\n" . $this->serviceTaskCard($task) . $note, [
+        $this->send($chatId, "<b>ServiceTask creada</b>\n\n" . $this->serviceTaskCard($task), [
             [
                 ['text' => 'Crear otra Tarea', 'callback_data' => 'task'],
                 ['text' => 'Volver al Menu', 'callback_data' => 'menu'],
@@ -916,24 +917,20 @@ class TelegramBot
             return;
         }
 
-        $tasks = ServiceTask::with(['team', 'match'])
-            ->where(function ($q) use ($user) {
-                $q->where('assigned_user_1', $user->id)
-                    ->orWhere('assigned_user_2', $user->id)
-                    ->orWhere('assigned_user_3', $user->id);
-            })
-            ->whereIn('status', ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'BLOCKED'])
+        $tasks = ServiceTask::with(['team', 'match', 'participants.user'])
+            ->whereHas('participants', fn ($q) => $q->where('user_id', $user->id)->where('status', '!=', 'DONE'))
+            ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])
             ->orderBy('priority')
             ->get();
 
         if ($tasks->isEmpty()) {
-            $this->send($chatId, 'No tienes ServiceTasks activas.', [[['text' => 'Volver al Menu', 'callback_data' => 'menu']]]);
+            $this->send($chatId, 'No tienes ServiceTasks pendientes.', [[['text' => 'Volver al Menu', 'callback_data' => 'menu']]]);
             return;
         }
 
         $this->send($chatId, "<b>TUS SERVICETASKS</b> ({$tasks->count()})");
         foreach ($tasks as $task) {
-            $this->send($chatId, $this->serviceTaskCard($task), $this->serviceTaskButtons($task));
+            $this->send($chatId, $this->serviceTaskCard($task, $user), $this->serviceTaskButtons($task, $user));
         }
     }
 
@@ -942,10 +939,9 @@ class TelegramBot
         [$kind, $id, $op] = array_pad($parts, 3, '');
 
         if ($kind === 'st') {
-            $task = ServiceTask::with(['team', 'match'])->find($id);
-            $mine = $task && in_array($user->id, [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3], true);
+            $task = ServiceTask::with(['team', 'match', 'participants.user'])->find($id);
 
-            if (!$mine) {
+            if (!$task || !$task->participantFor($user)) {
                 $this->send($chatId, 'Esa tarea no existe o no esta asignada a ti.');
                 return;
             }
@@ -969,49 +965,83 @@ class TelegramBot
 
     private function serviceTaskAction(string $chatId, User $user, ServiceTask $task, string $op): void
     {
-        $back = [['text' => 'Volver a la tarea', 'callback_data' => "act:st:{$task->id}:show"]];
+        $back = ['text' => 'Volver a la tarea', 'callback_data' => "act:st:{$task->id}:show"];
 
         switch ($op) {
             case 'show':
                 break;
 
             case 'start':
-                if ($task->status === 'PENDING' && $this->tasks->toAssigned($task) === false) {
-                    $this->send($chatId, 'No se puede iniciar: alguno de los usuarios asignados ya tiene otra tarea activa.');
+                $active = $this->tasks->activeParticipationFor($user);
+
+                if ($active && $active->service_task_id !== $task->id) {
+                    $team = $this->h($active->task?->team?->name ?? '-');
+                    $this->send(
+                        $chatId,
+                        "Ya estas activo en la ServiceTask #{$active->service_task_id} ({$team}). Suspendela primero para poder trabajar en esta.",
+                        [[
+                            ['text' => "Ver tarea #{$active->service_task_id}", 'callback_data' => "act:st:{$active->service_task_id}:show"],
+                            $back,
+                        ]]
+                    );
                     return;
                 }
-                $this->requireTransition($chatId, $this->tasks->toInProgress($task->refresh()), 'iniciar');
+
+                if (!$this->requireTransition($chatId, $this->tasks->userStart($task, $user), 'iniciar')) {
+                    return;
+                }
                 break;
 
+            case 'suspend':
+                if (!$this->requireTransition($chatId, $this->tasks->userSuspend($task, $user), 'suspender')) {
+                    return;
+                }
+                $this->send($chatId, 'Suspendiste tu parte. Quedas AVAILABLE; puedes reanudarla cuando quieras desde Mis ServiceTasks.');
+                break;
+
+            case 'done':
+                $participant = $task->participantFor($user);
+                $this->send($chatId, "Terminar tu parte de la ServiceTask #{$task->id}?\nTu tiempo: " . ($this->tasks->getParticipantElapsedTime($participant) ?? '-'), [
+                    [
+                        ['text' => 'Confirmar', 'callback_data' => "act:st:{$task->id}:done_ok"],
+                        $back,
+                    ],
+                ]);
+                return;
+
+            case 'done_ok':
+                if (!$this->requireTransition($chatId, $this->tasks->userComplete($task, $user), 'terminar')) {
+                    return;
+                }
+
+                $task->refresh()->load(['team', 'match', 'participants.user']);
+
+                if ($task->status === 'COMPLETED') {
+                    $this->send($chatId, "<b>Tarea completada por todos</b>\n\n" . $this->serviceTaskCard($task, $user), $this->afterTaskButtons('st'));
+                    return;
+                }
+
+                $pending = $task->participants
+                    ->where('status', '!=', 'DONE')
+                    ->map(fn ($p) => $this->h($p->user?->name ?? '?') . ' (' . self::PARTICIPANT_LABELS[$p->status] . ')')
+                    ->implode(', ');
+
+                $this->send($chatId, "<b>Terminaste tu parte</b>\nLa tarea sigue abierta para: {$pending}.\n\n" . $this->serviceTaskCard($task, $user), $this->afterTaskButtons('st'));
+                return;
+
             case 'block':
-                $this->requireTransition($chatId, $this->tasks->toBlocked($task), 'bloquear');
+                $this->requireTransition($chatId, $this->tasks->toBlocked($task), 'suspender');
                 break;
 
             case 'unblock':
                 $this->requireTransition($chatId, $this->tasks->toUnblocked($task), 'reanudar');
                 break;
 
-            case 'complete':
-                $this->send($chatId, "Completar la ServiceTask #{$task->id}?\nDuracion: {$this->elapsed($task)}", [
-                    [
-                        ['text' => 'Confirmar', 'callback_data' => "act:st:{$task->id}:complete_ok"],
-                        $back[0],
-                    ],
-                ]);
-                return;
-
-            case 'complete_ok':
-                if (!$this->requireTransition($chatId, $this->tasks->toCompleted($task), 'completar')) {
-                    return;
-                }
-                $this->send($chatId, "<b>Tarea completada</b>\n\n" . $this->serviceTaskCard($task->refresh()), $this->afterTaskButtons('st'));
-                return;
-
             case 'cancel':
-                $this->send($chatId, "Seguro que quieres cancelar la ServiceTask #{$task->id}?\nEsta accion no se puede deshacer.", [
+                $this->send($chatId, "Seguro que quieres cancelar la ServiceTask #{$task->id} para todos?\nEsta accion no se puede deshacer.", [
                     [
                         ['text' => 'Confirmar cancelacion', 'callback_data' => "act:st:{$task->id}:cancel_ok"],
-                        $back[0],
+                        $back,
                     ],
                 ]);
                 return;
@@ -1020,7 +1050,7 @@ class TelegramBot
                 if (!$this->requireTransition($chatId, $this->tasks->toCancelled($task), 'cancelar')) {
                     return;
                 }
-                $this->send($chatId, "<b>Tarea cancelada</b>\n\n" . $this->serviceTaskCard($task->refresh()), $this->afterTaskButtons('st'));
+                $this->send($chatId, "<b>Tarea cancelada</b>\n\n" . $this->serviceTaskCard($task->refresh(), $user), $this->afterTaskButtons('st'));
                 return;
 
             case 'help':
@@ -1031,8 +1061,8 @@ class TelegramBot
                 return;
         }
 
-        $task->refresh()->load(['team', 'match']);
-        $this->send($chatId, $this->serviceTaskCard($task), $this->serviceTaskButtons($task));
+        $task->refresh()->load(['team', 'match', 'participants.user']);
+        $this->send($chatId, $this->serviceTaskCard($task, $user), $this->serviceTaskButtons($task, $user));
     }
 
     private function mxTaskAction(string $chatId, User $user, MxTask $task, string $op): void
@@ -1048,7 +1078,7 @@ class TelegramBot
                 break;
 
             case 'block':
-                $this->requireTransition($chatId, $this->tasks->mxBlock($task), 'bloquear');
+                $this->requireTransition($chatId, $this->tasks->mxBlock($task), 'suspender');
                 break;
 
             case 'unblock':
@@ -1153,13 +1183,17 @@ class TelegramBot
         }
 
         if ($task instanceof ServiceTask) {
-            $task->load(['team', 'match']);
-            $text = "<b>Te asignaron una ServiceTask</b>\n\n" . $this->serviceTaskCard($task);
-            $buttons = $this->serviceTaskButtons($task);
-        } else {
-            $text = "<b>Te asignaron una MxTask</b>\n\n" . $this->mxTaskCard($task);
-            $buttons = $this->mxTaskButtons($task);
+            $task->load(['team', 'match', 'participants.user']);
+
+            foreach ($recipients as $user) {
+                $this->send($user->telegram_chat_id, "<b>Te asignaron una ServiceTask</b>\n\n" . $this->serviceTaskCard($task, $user), $this->serviceTaskButtons($task, $user));
+            }
+
+            return;
         }
+
+        $text = "<b>Te asignaron una MxTask</b>\n\n" . $this->mxTaskCard($task);
+        $buttons = $this->mxTaskButtons($task);
 
         foreach ($recipients as $user) {
             $this->send($user->telegram_chat_id, $text, $buttons);
@@ -1170,56 +1204,73 @@ class TelegramBot
     // Tarjetas y botones
     // -------------------------------------------------------------------
 
-    private function serviceTaskCard(ServiceTask $task): string
+    private function serviceTaskCard(ServiceTask $task, ?User $viewer = null): string
     {
-        $task->loadMissing(['team', 'match']);
+        $task->loadMissing(['team', 'match', 'participants.user']);
 
-        $ids = [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3];
-        $names = User::whereIn('id', array_filter($ids))->pluck('name', 'id');
-        $assigned = collect($ids)->filter()->map(fn ($id) => $this->h($names[$id] ?? '?'))->implode(', ');
+        $people = $task->participants
+            ->map(fn ($p) => $this->h($p->user?->name ?? '?') . ' (' . (self::PARTICIPANT_LABELS[$p->status] ?? $p->status) . ')')
+            ->implode(', ');
 
-        return implode("\n", [
+        $lines = [
             "<b>ServiceTask #{$task->id}</b>",
             "Match: #" . ($task->match?->number ?? '-'),
             "Equipo: {$this->h($task->team?->name ?? '-')}",
             "Prioridad: {$task->priority}",
             "Servicio: {$task->required_service}",
-            "Usuarios: " . ($assigned !== '' ? $assigned : 'sin asignar'),
+            "Usuarios: " . ($people !== '' ? $people : 'sin asignar'),
             "Estado: <b>{$task->status}</b>",
             "Inicio: " . ($task->started_at?->format('H:i:s') ?? '-'),
             "Fin: " . ($task->completed_at?->format('H:i:s') ?? '-'),
             "Duracion: {$this->elapsed($task)}",
-        ]);
+        ];
+
+        $me = $viewer ? $task->participantFor($viewer) : null;
+
+        if ($me) {
+            $lines[] = '';
+            $lines[] = "Tu estado: <b>" . self::PARTICIPANT_LABELS[$me->status] . "</b>";
+            $lines[] = "Tu tiempo: " . ($this->tasks->getParticipantElapsedTime($me) ?? '-');
+        }
+
+        return implode("\n", $lines);
     }
 
-    private function serviceTaskButtons(ServiceTask $task): array
+    private function serviceTaskButtons(ServiceTask $task, ?User $viewer = null): array
     {
         $id = $task->id;
+        $me = $viewer ? $task->participantFor($viewer) : null;
+        $rows = [];
 
-        $rows = match ($task->status) {
-            'PENDING', 'ASSIGNED' => [[
-                ['text' => 'Iniciar', 'callback_data' => "act:st:{$id}:start"],
-                ['text' => 'Cancelar', 'callback_data' => "act:st:{$id}:cancel"],
-            ]],
-            'IN_PROGRESS' => [
-                [
-                    ['text' => 'Completar', 'callback_data' => "act:st:{$id}:complete"],
-                    ['text' => 'Bloquear', 'callback_data' => "act:st:{$id}:block"],
-                ],
-                [
-                    ['text' => 'Cancelar', 'callback_data' => "act:st:{$id}:cancel"],
-                    ['text' => 'Pedir ayuda', 'callback_data' => "act:st:{$id}:help"],
-                ],
-            ],
-            'BLOCKED' => [
-                [
-                    ['text' => 'Reanudar', 'callback_data' => "act:st:{$id}:unblock"],
-                    ['text' => 'Cancelar', 'callback_data' => "act:st:{$id}:cancel"],
-                ],
-                [['text' => 'Pedir ayuda', 'callback_data' => "act:st:{$id}:help"]],
-            ],
-            default => [],
-        };
+        if ($me && !in_array($task->status, ['COMPLETED', 'CANCELLED'])) {
+            $cancel = ['text' => 'Cancelar tarea', 'callback_data' => "act:st:{$id}:cancel"];
+            $help = ['text' => 'Pedir ayuda', 'callback_data' => "act:st:{$id}:help"];
+
+            if ($task->status === 'BLOCKED') {
+                $rows[] = [['text' => 'Reanudar tarea', 'callback_data' => "act:st:{$id}:unblock"], $cancel];
+                if ($me->status === 'ACTIVE') {
+                    $rows[] = [['text' => 'Suspender mi parte', 'callback_data' => "act:st:{$id}:suspend"], $help];
+                } else {
+                    $rows[] = [$help];
+                }
+            } elseif ($me->status === 'ASSIGNED') {
+                $rows[] = [['text' => 'Iniciar', 'callback_data' => "act:st:{$id}:start"], $cancel];
+                $rows[] = [$help];
+            } elseif ($me->status === 'ACTIVE') {
+                $rows[] = [
+                    ['text' => 'Suspender mi parte', 'callback_data' => "act:st:{$id}:suspend"],
+                    ['text' => 'Terminar mi parte', 'callback_data' => "act:st:{$id}:done"],
+                ];
+                $rows[] = [['text' => 'Suspender tarea', 'callback_data' => "act:st:{$id}:block"], $cancel];
+                $rows[] = [$help];
+            } elseif ($me->status === 'SUSPENDED') {
+                $rows[] = [
+                    ['text' => 'Reanudar mi parte', 'callback_data' => "act:st:{$id}:start"],
+                    ['text' => 'Terminar mi parte', 'callback_data' => "act:st:{$id}:done"],
+                ];
+                $rows[] = [$cancel, $help];
+            }
+        }
 
         $rows[] = [['text' => 'Volver al Menu', 'callback_data' => 'menu']];
 
@@ -1255,7 +1306,7 @@ class TelegramBot
             'IN_PROGRESS' => [
                 [
                     ['text' => 'Completar', 'callback_data' => "act:mx:{$id}:complete"],
-                    ['text' => 'Bloquear', 'callback_data' => "act:mx:{$id}:block"],
+                    ['text' => 'Suspender', 'callback_data' => "act:mx:{$id}:block"],
                 ],
                 [
                     ['text' => 'Cancelar', 'callback_data' => "act:mx:{$id}:cancel"],

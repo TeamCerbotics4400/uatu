@@ -26,7 +26,7 @@ class Team extends Model
     public function activeTasks(): HasMany
     {
         return $this->serviceTasks()
-            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED']);
+            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED']);
     }
  
     public function completedTasks(): HasMany
@@ -65,12 +65,12 @@ class Team extends Model
         // Si serviceTasks está eager loaded, usa eso en memoria
         if ($this->relationLoaded('serviceTasks')) {
             $allTasks = $this->serviceTasks
-                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELLED'])
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED', 'COMPLETED', 'CANCELLED'])
                 ->values();
         } else {
             // Si no, hace query fresca
             $allTasks = $this->serviceTasks()
-                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELLED'])
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED', 'COMPLETED', 'CANCELLED'])
                 ->get();
         }
 
@@ -83,7 +83,7 @@ class Team extends Model
 
         // Si hay tareas activas (no completadas) → IN_PROGRESS
         $hasActiveTasks = $allTasks->contains(fn ($task) => 
-            in_array($task->status, ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED'])
+            in_array($task->status, ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED'])
         );
 
         if ($hasActiveTasks) {
@@ -117,12 +117,12 @@ class Team extends Model
         // Si serviceTasks está eager loaded, usa eso en memoria
         if ($this->relationLoaded('serviceTasks')) {
             $allTasks = $this->serviceTasks
-                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'])
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED', 'COMPLETED'])
                 ->values();
         } else {
             // Si no, hace query fresca
             $allTasks = $this->serviceTasks()
-                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'])
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED', 'COMPLETED'])
                 ->get();
         }
 

@@ -204,7 +204,7 @@ class MxTaskResource extends Resource
                     }),
 
                 Action::make('block')
-                    ->label('Block')
+                    ->label('Suspend')
                     ->icon('heroicon-o-hand-raised')
                     ->visible(fn (MxTask $record): bool => $record->status === 'IN_PROGRESS')
                     ->color('warning')
@@ -214,7 +214,7 @@ class MxTaskResource extends Resource
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
-                                ->body('Task blocked')
+                                ->body('Task suspended')
                                 ->warning()
                                 ->send();
                         } else {
@@ -227,7 +227,7 @@ class MxTaskResource extends Resource
                     }),
 
                 Action::make('unblock')
-                    ->label('Unblock')
+                    ->label('Resume')
                     ->icon('heroicon-o-arrow-path')
                     ->visible(fn (MxTask $record): bool => $record->status === 'BLOCKED')
                     ->color('info')
@@ -237,7 +237,7 @@ class MxTaskResource extends Resource
                         if ($result) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Success')
-                                ->body('Task unblocked, resumed')
+                                ->body('Task resumed')
                                 ->success()
                                 ->send();
                         } else {

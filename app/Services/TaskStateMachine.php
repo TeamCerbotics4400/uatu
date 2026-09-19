@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\MxTask;
 use App\Models\ServiceTask;
+use App\Models\ServiceTaskUser;
 use App\Models\User;
 use App\Models\TaskHistory;
 use Carbon\Carbon;
@@ -12,103 +13,143 @@ class TaskStateMachine
 {
     // =====================================================
     // SERVICETASK METHODS
+    //
+    // Cada usuario asignado tiene su propio estado dentro de la tarea
+    // (service_task_users.status): ASSIGNED, ACTIVE, SUSPENDED, DONE.
+    // El estado de la tarea se deriva de los estados de sus usuarios.
+    // Un usuario solo puede estar ACTIVE en una ServiceTask a la vez.
     // =====================================================
 
-    /**
-     * Verifica si al menos un usuario está asignado
-     */
     public function hasAssignedUsers(ServiceTask $task): bool
     {
         return $task->assigned_user_1 || $task->assigned_user_2 || $task->assigned_user_3;
     }
 
     /**
-     * Marca los usuarios asignados como BUSY (si no lo están ya)
+     * Alinea service_task_users con assigned_user_1/2/3 y recalcula el
+     * estado de la tarea. Se llama al asignar y al editar desde la dashboard.
      */
-    private function markUsersAsBusy(ServiceTask $task): void
+    public function syncParticipants(ServiceTask $task): void
     {
-        $userIds = [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3];
+        $ids = array_values(array_unique(array_filter([
+            $task->assigned_user_1,
+            $task->assigned_user_2,
+            $task->assigned_user_3,
+        ])));
 
-        foreach ($userIds as $userId) {
-            if ($userId) {
-                $user = User::find($userId);
-                if ($user && $user->status !== 'BUSY') {
-                    $user->update(['status' => 'BUSY']);
-                }
+        $existing = $task->participants()->pluck('user_id')->all();
+
+        foreach (array_diff($ids, $existing) as $userId) {
+            $task->participants()->create(['user_id' => $userId, 'status' => 'ASSIGNED']);
+        }
+
+        $removed = array_diff($existing, $ids);
+
+        if ($removed) {
+            $task->participants()->whereIn('user_id', $removed)->delete();
+
+            foreach (User::whereIn('id', $removed)->get() as $user) {
+                $this->refreshUserStatus($user);
             }
         }
-    }
 
-    /**
-     * Marca los usuarios asignados como AVAILABLE (cuando se completa/cancela)
-     */
-    private function releaseServiceTaskUsers(ServiceTask $task): void
-    {
-        $userIds = [$task->assigned_user_1, $task->assigned_user_2, $task->assigned_user_3];
-
-        foreach ($userIds as $userId) {
-            if ($userId) {
-                $user = User::find($userId);
-                if ($user) {
-                    $user->update(['status' => 'AVAILABLE']);
-                }
-            }
-        }
+        $task->unsetRelation('participants');
+        $this->refreshTaskStatus($task);
     }
 
     public function toAssigned(ServiceTask $task): ServiceTask|false
     {
-        if ($task->status !== 'PENDING') {
+        if ($task->status !== 'PENDING' || !$this->hasAssignedUsers($task)) {
             return false;
         }
 
-        // Verificar que hay al menos un usuario asignado
-        if (!$this->hasAssignedUsers($task)) {
-            return false;
-        }
-
-        // Verificar que ninguno de los usuarios tiene tareas activas
-        if ($this->anyUserHasActiveTask($task->assigned_user_1) ||
-            $this->anyUserHasActiveTask($task->assigned_user_2) ||
-            $this->anyUserHasActiveTask($task->assigned_user_3)) {
-            return false;
-        }
-
-        $task->update(['status' => 'ASSIGNED']);
-        $this->markUsersAsBusy($task);
+        $this->syncParticipants($task);
         $this->recordHistory($task, 'PENDING');
 
         return $task->refresh();
     }
 
-    public function toInProgress(ServiceTask $task): ServiceTask|false
+    /**
+     * El usuario empieza (o reanuda) su parte. Falla si ya esta ACTIVE en
+     * otra ServiceTask: debe suspenderla primero.
+     */
+    public function userStart(ServiceTask $task, User $user): ServiceTask|false
     {
-        if ($task->status !== 'ASSIGNED') {
+        if (in_array($task->status, ['BLOCKED', 'COMPLETED', 'CANCELLED'])) {
             return false;
         }
 
-        $task->update([
-            'status' => 'IN_PROGRESS',
-            'started_at' => Carbon::now(),
+        $participant = $this->participant($task, $user);
+
+        if (!$participant || !in_array($participant->status, ['ASSIGNED', 'SUSPENDED'])) {
+            return false;
+        }
+
+        if ($this->activeParticipationFor($user)) {
+            return false;
+        }
+
+        $previous = $task->status;
+
+        $participant->update([
+            'status' => 'ACTIVE',
+            'started_at' => $participant->started_at ?? Carbon::now(),
         ]);
-        $this->recordHistory($task, 'ASSIGNED');
+
+        if (!$task->started_at) {
+            $task->update(['started_at' => Carbon::now()]);
+        }
+
+        $this->refreshTaskStatus($task);
+        $this->refreshUserStatus($user);
+        $this->recordHistory($task, $previous, $user);
 
         return $task->refresh();
     }
 
-    public function toCompleted(ServiceTask $task): ServiceTask|false
+    /**
+     * El usuario suspende su parte para ir a otra tarea. Queda AVAILABLE.
+     */
+    public function userSuspend(ServiceTask $task, User $user): ServiceTask|false
     {
-        if ($task->status !== 'IN_PROGRESS') {
+        $participant = $this->participant($task, $user);
+
+        if (!$participant || $participant->status !== 'ACTIVE') {
             return false;
         }
 
-        $task->update([
-            'status' => 'COMPLETED',
-            'completed_at' => Carbon::now(),
-        ]);
+        $previous = $task->status;
+        $participant->update(['status' => 'SUSPENDED']);
 
-        $this->releaseServiceTaskUsers($task);
-        $this->recordHistory($task, 'IN_PROGRESS');
+        $this->refreshTaskStatus($task);
+        $this->refreshUserStatus($user);
+        $this->recordHistory($task, $previous, $user);
+
+        return $task->refresh();
+    }
+
+    /**
+     * El usuario termina su parte. La tarea pasa a COMPLETED solo cuando
+     * todos los asignados terminaron.
+     */
+    public function userComplete(ServiceTask $task, User $user): ServiceTask|false
+    {
+        if (in_array($task->status, ['COMPLETED', 'CANCELLED'])) {
+            return false;
+        }
+
+        $participant = $this->participant($task, $user);
+
+        if (!$participant || !in_array($participant->status, ['ACTIVE', 'SUSPENDED'])) {
+            return false;
+        }
+
+        $previous = $task->status;
+        $participant->update(['status' => 'DONE', 'completed_at' => Carbon::now()]);
+
+        $this->refreshTaskStatus($task);
+        $this->refreshUserStatus($user);
+        $this->recordHistory($task, $previous, $user);
 
         return $task->refresh();
     }
@@ -119,26 +160,27 @@ class TaskStateMachine
             return false;
         }
 
-        $previousState = $task->status;
+        $previous = $task->status;
         $task->update([
             'status' => 'CANCELLED',
             'completed_at' => Carbon::now(),
         ]);
 
-        $this->releaseServiceTaskUsers($task);
-        $this->recordHistory($task, $previousState);
+        $this->refreshParticipantsUsers($task);
+        $this->recordHistory($task, $previous);
 
         return $task->refresh();
     }
 
     public function toBlocked(ServiceTask $task): ServiceTask|false
     {
-        if ($task->status !== 'IN_PROGRESS') {
+        if (!in_array($task->status, ['IN_PROGRESS', 'SUSPENDED'])) {
             return false;
         }
 
+        $previous = $task->status;
         $task->update(['status' => 'BLOCKED']);
-        $this->recordHistory($task, 'IN_PROGRESS');
+        $this->recordHistory($task, $previous);
 
         return $task->refresh();
     }
@@ -149,7 +191,7 @@ class TaskStateMachine
             return false;
         }
 
-        $task->update(['status' => 'IN_PROGRESS']);
+        $this->refreshTaskStatus($task, ignoreBlocked: true);
         $this->recordHistory($task, 'BLOCKED');
 
         return $task->refresh();
@@ -161,7 +203,7 @@ class TaskStateMachine
             return false;
         }
 
-        $previousState = $task->status;
+        $previous = $task->status;
         $task->update([
             'status' => 'PENDING',
             'assigned_user_1' => null,
@@ -169,11 +211,49 @@ class TaskStateMachine
             'assigned_user_3' => null,
             'started_at' => null,
         ]);
-        
-        $this->releaseServiceTaskUsers($task);
-        $this->recordHistory($task, $previousState);
+
+        $this->syncParticipants($task);
+        $this->recordHistory($task, $previous);
 
         return $task->refresh();
+    }
+
+    public function activeParticipationFor(User $user): ?ServiceTaskUser
+    {
+        return ServiceTaskUser::where('user_id', $user->id)
+            ->where('status', 'ACTIVE')
+            ->with('task.team')
+            ->first();
+    }
+
+    /**
+     * Recalcula users.status a partir de lo que el usuario tiene activo.
+     * BUSY si esta ACTIVE en una ServiceTask o en una MxTask abierta;
+     * si no, AVAILABLE (RESTING se respeta porque es manual).
+     */
+    public function refreshUserStatus(?User $user): void
+    {
+        if (!$user) {
+            return;
+        }
+
+        $busy = ServiceTaskUser::where('user_id', $user->id)->where('status', 'ACTIVE')->exists()
+            || MxTask::whereIn('status', ['PENDING', 'IN_PROGRESS', 'BLOCKED'])
+                ->where(function ($query) use ($user) {
+                    $query->where('assigned_user_1', $user->id)
+                        ->orWhere('assigned_user_2', $user->id)
+                        ->orWhere('assigned_user_3', $user->id)
+                        ->orWhere('assigned_user_4', $user->id);
+                })
+                ->exists();
+
+        if ($busy) {
+            if ($user->status !== 'BUSY') {
+                $user->update(['status' => 'BUSY']);
+            }
+        } elseif (in_array($user->status, ['BUSY', 'NEEDS_HELP'])) {
+            $user->update(['status' => 'AVAILABLE']);
+        }
     }
 
     public function getTaskInfo(ServiceTask $task): array
@@ -201,6 +281,70 @@ class TaskStateMachine
         $diff = $task->started_at->diff($endTime);
 
         return $diff->format('%H:%I:%S');
+    }
+
+    public function getParticipantElapsedTime(ServiceTaskUser $participant): ?string
+    {
+        if (!$participant->started_at) {
+            return null;
+        }
+
+        $endTime = $participant->completed_at ?? Carbon::now();
+
+        return $participant->started_at->diff($endTime)->format('%H:%I:%S');
+    }
+
+    private function participant(ServiceTask $task, User $user): ?ServiceTaskUser
+    {
+        return $task->participants()->where('user_id', $user->id)->first();
+    }
+
+    /**
+     * Estado de la tarea a partir de sus usuarios:
+     * sin usuarios -> PENDING; todos DONE -> COMPLETED; alguien ACTIVE -> IN_PROGRESS;
+     * nadie activo pero alguien ya empezo o termino -> SUSPENDED; nadie empezo -> ASSIGNED.
+     * BLOCKED y CANCELLED se conservan porque son manuales.
+     */
+    private function refreshTaskStatus(ServiceTask $task, bool $ignoreBlocked = false): void
+    {
+        if ($task->status === 'CANCELLED') {
+            return;
+        }
+
+        $statuses = $task->participants()->pluck('status');
+
+        if ($statuses->isEmpty()) {
+            $new = 'PENDING';
+        } elseif ($statuses->every(fn ($s) => $s === 'DONE')) {
+            $new = 'COMPLETED';
+        } elseif ($task->status === 'BLOCKED' && !$ignoreBlocked) {
+            $new = 'BLOCKED';
+        } elseif ($statuses->contains('ACTIVE')) {
+            $new = 'IN_PROGRESS';
+        } elseif ($statuses->contains('SUSPENDED') || $statuses->contains('DONE')) {
+            $new = 'SUSPENDED';
+        } else {
+            $new = 'ASSIGNED';
+        }
+
+        $data = ['status' => $new];
+
+        if ($new === 'COMPLETED') {
+            $data['completed_at'] = $task->completed_at ?? Carbon::now();
+        } elseif ($task->completed_at) {
+            $data['completed_at'] = null;
+        }
+
+        if ($new !== $task->status || ($data['completed_at'] ?? null) !== $task->completed_at) {
+            $task->update($data);
+        }
+    }
+
+    private function refreshParticipantsUsers(ServiceTask $task): void
+    {
+        foreach ($task->participants()->with('user')->get() as $participant) {
+            $this->refreshUserStatus($participant->user);
+        }
     }
 
     // =====================================================
@@ -334,67 +478,27 @@ class TaskStateMachine
     // PRIVATE HELPER METHODS
     // =====================================================
 
-    /**
-     * Verifica si un usuario tiene tarea activa (ServiceTask o MxTask)
-     */
-    private function anyUserHasActiveTask(?string $userId = null): bool
-    {
-        if (!$userId) {
-            return false;
-        }
-
-        $activeStatusesService = ServiceTask::where(function ($query) use ($userId) {
-            $query->where('assigned_user_1', $userId)
-                  ->orWhere('assigned_user_2', $userId)
-                  ->orWhere('assigned_user_3', $userId);
-        })
-        ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
-        ->exists();
-
-        $activeStatusesMx = MxTask::whereIn('status', ['IN_PROGRESS'])
-            ->where(function ($query) use ($userId) {
-                $query->where('assigned_user_1', $userId)
-                      ->orWhere('assigned_user_2', $userId)
-                      ->orWhere('assigned_user_3', $userId)
-                      ->orWhere('assigned_user_4', $userId);
-            })
-            ->exists();
-
-        return $activeStatusesService || $activeStatusesMx;
-    }
-
-    /**
-     * Libera los 4 usuarios de una MxTask (los marca como AVAILABLE)
-     */
     private function releaseMxTaskUsers(MxTask $task): void
     {
-        $userIds = [
+        $userIds = array_filter([
             $task->assigned_user_1,
             $task->assigned_user_2,
             $task->assigned_user_3,
             $task->assigned_user_4,
-        ];
+        ]);
 
-        foreach ($userIds as $userId) {
-            if ($userId) {
-                $user = User::find($userId);
-                if ($user) {
-                    $user->update(['status' => 'AVAILABLE']);
-                }
-            }
+        foreach (User::whereIn('id', $userIds)->get() as $user) {
+            $this->refreshUserStatus($user);
         }
     }
 
-    private function recordHistory(ServiceTask $task, string $previousState): void
+    private function recordHistory(ServiceTask $task, string $previousState, ?User $actor = null): void
     {
-        // Usar el primer usuario asignado como responsable del registro
-        $userId = $task->assigned_user_1 ?? $task->assigned_user_2 ?? $task->assigned_user_3;
-
         TaskHistory::create([
             'service_task_id' => $task->id,
             'previous_state' => $previousState,
             'new_state' => $task->status,
-            'user_id' => $userId,
+            'user_id' => $actor?->id ?? $task->assigned_user_1 ?? $task->assigned_user_2 ?? $task->assigned_user_3,
         ]);
     }
 }

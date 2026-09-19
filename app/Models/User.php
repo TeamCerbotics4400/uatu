@@ -56,6 +56,16 @@ class User extends Model
         return $this->status === 'AVAILABLE' && !$this->currentTask();
     }
 
+    public function serviceParticipations(): HasMany
+    {
+        return $this->hasMany(ServiceTaskUser::class, 'user_id');
+    }
+
+    public function activeServiceParticipation(): ?ServiceTaskUser
+    {
+        return $this->serviceParticipations()->where('status', 'ACTIVE')->with('task.team')->first();
+    }
+
     public function telegramMessages(): HasMany
     {
         return $this->hasMany(TelegramMessage::class, 'user_id');
@@ -68,15 +78,18 @@ class User extends Model
 
     public function getCurrentTaskDisplay(): string
     {
-        // Buscar ServiceTask activo
-        $serviceTask = $this->serviceTasks()
-            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
-            ->with('team')
-            ->first();
+        $participation = $this->activeServiceParticipation();
 
-        if ($serviceTask) {
-            $teamName = $serviceTask->team?->name ?? 'UNKNOWN';
+        if ($participation) {
+            $teamName = $participation->task?->team?->name ?? 'UNKNOWN';
             return 'HELPING_' . strtoupper($teamName);
+        }
+
+        $suspended = $this->serviceParticipations()->where('status', 'SUSPENDED')->with('task.team')->first();
+
+        if ($suspended) {
+            $teamName = $suspended->task?->team?->name ?? 'UNKNOWN';
+            return 'SUSPENDED_' . strtoupper($teamName);
         }
 
         // Buscar MxTask activo (en cualquiera de los 4 campos)
