@@ -1261,7 +1261,7 @@ class TelegramBot
                     ['text' => 'Suspender', 'callback_data' => "act:st:{$id}:suspend"],
                     ['text' => 'Terminar mi parte', 'callback_data' => "act:st:{$id}:done"],
                 ];
-                $rows[] = [['text' => 'Bloquear', 'callback_data' => "act:st:{$id}:block"], $cancel];
+                $rows[] = [['text' => 'Susoender', 'callback_data' => "act:st:{$id}:block"], $cancel];
                 $rows[] = [$help];
             } elseif ($me->status === 'SUSPENDED') {
                 $rows[] = [
@@ -1306,7 +1306,7 @@ class TelegramBot
             'IN_PROGRESS' => [
                 [
                     ['text' => 'Completar', 'callback_data' => "act:mx:{$id}:complete"],
-                    ['text' => 'Bloquear', 'callback_data' => "act:mx:{$id}:block"],
+                    ['text' => 'Suspender', 'callback_data' => "act:mx:{$id}:block"],
                 ],
                 [
                     ['text' => 'Cancelar', 'callback_data' => "act:mx:{$id}:cancel"],
