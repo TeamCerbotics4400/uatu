@@ -184,6 +184,7 @@ class ServiceTaskResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with('participants.user'))
             ->columns([
                 Tables\Columns\TextColumn::make('id')
                     ->searchable()
@@ -192,10 +193,10 @@ class ServiceTaskResource extends Resource
 
                 BadgeColumn::make('status')
                     ->colors([
-                        'danger' => 'PENDING',
+                        'danger' => ['PENDING', 'BLOCKED'],
                         'info' => 'ASSIGNED',
                         'warning' => 'IN_PROGRESS',
-                        'danger' => 'BLOCKED',
+                        'primary' => 'SUSPENDED',
                         'success' => 'COMPLETED',
                         'gray' => 'CANCELLED',
                     ])
@@ -269,6 +270,7 @@ class ServiceTaskResource extends Resource
                         'PENDING' => 'Pending',
                         'ASSIGNED' => 'Assigned',
                         'IN_PROGRESS' => 'In Progress',
+                        'SUSPENDED' => 'Suspended',
                         'BLOCKED' => 'Blocked',
                         'COMPLETED' => 'Completed',
                         'CANCELLED' => 'Cancelled',
@@ -310,6 +312,7 @@ class ServiceTaskResource extends Resource
                             ->relationship('user1', 'name')
                             ->searchable()
                             ->preload()
+                            ->required()
                             ->label('User 1 (Required)'),
 
                         Forms\Components\Select::make('assigned_user_2')
@@ -328,69 +331,73 @@ class ServiceTaskResource extends Resource
                     ])
                     ->action(function (ServiceTask $record, array $data): void {
                         $record->update($data);
-                        
-                        $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toAssigned($record);
-                        
-                        if ($result) {
-                            $userNames = $record->getAssignedUserNames();
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body("Task assigned to {$userNames}")
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot assign task. One or more users may have active tasks.')
-                                ->danger()
-                                ->send();
-                        }
+
+                        $result = (new TaskStateMachine())->toAssigned($record);
+
+                        static::notify($result !== false, "Task assigned to {$record->getAssignedUserNames()}", 'Cannot assign task without users.');
                     }),
 
-                Action::make('start')
+                Action::make('start_user')
                     ->label('Start')
                     ->icon('heroicon-o-play')
-                    ->visible(fn (ServiceTask $record): bool => $record->status === 'ASSIGNED')
-                    ->action(function (ServiceTask $record): void {
+                    ->visible(fn (ServiceTask $record): bool => in_array($record->status, ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED'])
+                        && $record->participants->whereIn('status', ['ASSIGNED', 'SUSPENDED'])->isNotEmpty())
+                    ->form(fn (ServiceTask $record) => [static::participantSelect($record, ['ASSIGNED', 'SUSPENDED'])])
+                    ->action(function (ServiceTask $record, array $data): void {
                         $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toInProgress($record);
-                        if ($result) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body('Task started')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot start task in current state')
-                                ->danger()
-                                ->send();
+                        $user = User::find($data['user_id']);
+                        $active = $user ? $stateMachine->activeParticipationFor($user) : null;
+
+                        if ($active) {
+                            static::notify(false, '', "{$user->name} is active in Service Task #{$active->service_task_id}. Suspend it first.");
+                            return;
                         }
+
+                        $result = $user ? $stateMachine->userStart($record, $user) : false;
+
+                        static::notify($result !== false, "{$user?->name} started working on this task.", 'Cannot start in the current state.');
+                    }),
+
+                Action::make('suspend_user')
+                    ->label('Suspend')
+                    ->icon('heroicon-o-pause')
+                    ->color('primary')
+                    ->visible(fn (ServiceTask $record): bool => $record->participants->where('status', 'ACTIVE')->isNotEmpty())
+                    ->form(fn (ServiceTask $record) => [static::participantSelect($record, ['ACTIVE'])])
+                    ->action(function (ServiceTask $record, array $data): void {
+                        $user = User::find($data['user_id']);
+                        $result = $user ? (new TaskStateMachine())->userSuspend($record, $user) : false;
+
+                        static::notify($result !== false, "{$user?->name} suspended their part. They are now AVAILABLE.", 'Cannot suspend in the current state.');
+                    }),
+
+                Action::make('complete_user')
+                    ->label('Complete part')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->visible(fn (ServiceTask $record): bool => !in_array($record->status, ['COMPLETED', 'CANCELLED'])
+                        && $record->participants->whereIn('status', ['ACTIVE', 'SUSPENDED'])->isNotEmpty())
+                    ->form(fn (ServiceTask $record) => [static::participantSelect($record, ['ACTIVE', 'SUSPENDED'])])
+                    ->action(function (ServiceTask $record, array $data): void {
+                        $user = User::find($data['user_id']);
+                        $result = $user ? (new TaskStateMachine())->userComplete($record, $user) : false;
+
+                        $message = $result && $result->status === 'COMPLETED'
+                            ? 'All users finished. Task COMPLETED.'
+                            : "{$user?->name} finished their part. Task stays open for the others.";
+
+                        static::notify($result !== false, $message, 'Cannot complete in the current state.');
                     }),
 
                 Action::make('block')
                     ->label('Block')
                     ->icon('heroicon-o-hand-raised')
-                    ->visible(fn (ServiceTask $record): bool => $record->status === 'IN_PROGRESS')
+                    ->visible(fn (ServiceTask $record): bool => in_array($record->status, ['IN_PROGRESS', 'SUSPENDED']))
                     ->color('warning')
                     ->action(function (ServiceTask $record): void {
-                        $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toBlocked($record);
-                        if ($result) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body('Task blocked')
-                                ->warning()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot block task in current state')
-                                ->danger()
-                                ->send();
-                        }
+                        $result = (new TaskStateMachine())->toBlocked($record);
+
+                        static::notify($result !== false, 'Task blocked', 'Cannot block task in current state');
                     }),
 
                 Action::make('unblock')
@@ -399,45 +406,9 @@ class ServiceTaskResource extends Resource
                     ->visible(fn (ServiceTask $record): bool => $record->status === 'BLOCKED')
                     ->color('info')
                     ->action(function (ServiceTask $record): void {
-                        $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toInProgress($record);
-                        if ($result) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body('Task unblocked, resumed')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot resume task')
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                        $result = (new TaskStateMachine())->toUnblocked($record);
 
-                Action::make('complete')
-                    ->label('Complete')
-                    ->icon('heroicon-o-check-circle')
-                    ->visible(fn (ServiceTask $record): bool => in_array($record->status, ['IN_PROGRESS', 'BLOCKED']))
-                    ->color('success')
-                    ->requiresConfirmation()
-                    ->action(function (ServiceTask $record): void {
-                        $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toCompleted($record);
-                        if ($result) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body('Task completed. All assigned users set to AVAILABLE.')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot complete task in current state')
-                                ->danger()
-                                ->send();
-                        }
+                        static::notify($result !== false, 'Task unblocked', 'Cannot unblock task in current state');
                     }),
 
                 Action::make('cancel')
@@ -447,21 +418,9 @@ class ServiceTaskResource extends Resource
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (ServiceTask $record): void {
-                        $stateMachine = new TaskStateMachine();
-                        $result = $stateMachine->toCancelled($record);
-                        if ($result) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Success')
-                                ->body('Task cancelled. All assigned users set to AVAILABLE.')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error')
-                                ->body('Cannot cancel task in current state')
-                                ->danger()
-                                ->send();
-                        }
+                        $result = (new TaskStateMachine())->toCancelled($record);
+
+                        static::notify($result !== false, 'Task cancelled. Users released.', 'Cannot cancel task in current state');
                     }),
 
                 Tables\Actions\EditAction::make(),
@@ -471,6 +430,26 @@ class ServiceTaskResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    private static function participantSelect(ServiceTask $record, array $statuses): Forms\Components\Select
+    {
+        return Forms\Components\Select::make('user_id')
+            ->label('User')
+            ->required()
+            ->options($record->participants
+                ->whereIn('status', $statuses)
+                ->mapWithKeys(fn ($p) => [$p->user_id => ($p->user?->name ?? '?') . ' (' . $p->status . ')'])
+                ->all());
+    }
+
+    private static function notify(bool $ok, string $success, string $error): void
+    {
+        \Filament\Notifications\Notification::make()
+            ->title($ok ? 'Success' : 'Error')
+            ->body($ok ? $success : $error)
+            ->{$ok ? 'success' : 'danger'}()
+            ->send();
     }
 
     public static function getRelations(): array

@@ -4,6 +4,7 @@ namespace App\Models;
  
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
  
 class ServiceTask extends Model
 {
@@ -52,6 +53,16 @@ class ServiceTask extends Model
     public function match(): BelongsTo
     {
         return $this->belongsTo(Matches::class, 'match_id');
+    }
+
+    public function participants(): HasMany
+    {
+        return $this->hasMany(ServiceTaskUser::class, 'service_task_id');
+    }
+
+    public function participantFor(User $user): ?ServiceTaskUser
+    {
+        return $this->participants->firstWhere('user_id', $user->id);
     }
 
     /**

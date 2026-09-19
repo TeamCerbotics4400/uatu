@@ -54,7 +54,7 @@ class Matches extends Model
         }
 
         $tasks = ServiceTask::where('assigned_team', $teamId)
-            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'])
+            ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED', 'COMPLETED'])
             ->get();
 
         if ($tasks->isEmpty()) {
@@ -67,7 +67,7 @@ class Matches extends Model
         }
 
         // Si hay al menos una tarea activa (ASSIGNED, IN_PROGRESS, BLOCKED)
-        if ($tasks->contains(fn ($task) => in_array($task->status, ['ASSIGNED', 'IN_PROGRESS', 'BLOCKED']))) {
+        if ($tasks->contains(fn ($task) => in_array($task->status, ['ASSIGNED', 'IN_PROGRESS', 'SUSPENDED', 'BLOCKED']))) {
             return 'in_progress';
         }
 
